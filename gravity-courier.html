@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>引力信使 · Gravity Courier</title>
+<style>
+  :root{
+    --ink:#EDE9FF; --gold:#FFD166; --cyan:#5EF2E0; --rose:#FF6B9D;
+    --bg0:#0B0A1A; --bg1:#161038; --dim:#8E86B8;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(120% 90% at 50% 0%, var(--bg1), var(--bg0) 70%);
+    color:var(--ink); font-family:'Futura','Avenir Next','PingFang SC','Microsoft YaHei',system-ui,sans-serif; font-weight:600;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+    user-select:none; -webkit-user-select:none;
+  }
+  #stage{position:relative; width:min(96vw, calc(96vh * 1.6)); aspect-ratio:16/10;}
+  canvas{position:absolute; inset:0; width:100%; height:100%; display:block;
+    border-radius:18px; box-shadow:0 0 0 1px rgba(140,120,255,.18), 0 30px 80px rgba(0,0,0,.6);
+    cursor:crosshair; touch-action:none;}
+  /* ---------- HUD ---------- */
+  #hud{position:absolute; top:0; left:0; right:0; padding:14px 20px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none; font-size:clamp(9px,1.2vw,12px); letter-spacing:.12em;}
+  .hudbox{background:rgba(11,10,26,.55); backdrop-filter:blur(6px);
+    border:1px solid rgba(140,120,255,.2); border-radius:10px; padding:8px 14px;}
+  #lvname{color:var(--gold)} 
+  .lbl{color:var(--dim); font-size:.78em; display:block; margin-bottom:3px}
+  #probes span{display:inline-block; width:9px; height:9px; border-radius:50%;
+    background:var(--cyan); margin-right:5px; box-shadow:0 0 6px var(--cyan);}
+  #probes span.used{background:#3a3560; box-shadow:none}
+  #crys{color:var(--gold)}
+  /* ---------- Modals ---------- */
+  .modal{position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px; text-align:center;
+    background:rgba(8,7,20,.78); backdrop-filter:blur(8px); border-radius:18px;
+    opacity:0; pointer-events:none; transition:opacity .45s;}
+  .modal.show{opacity:1; pointer-events:auto}
+  .modal h1{font-weight:900; font-size:clamp(26px,4.6vw,52px); letter-spacing:.06em;
+    background:linear-gradient(95deg,var(--cyan),var(--gold) 60%,var(--rose));
+    -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .modal h2{font-weight:700; font-size:clamp(18px,3vw,30px); color:var(--gold); letter-spacing:.1em}
+  .modal p{max-width:34em; line-height:1.9; color:var(--dim);
+    font-size:clamp(11px,1.4vw,14px); padding:0 24px;}
+  .modal p b{color:var(--ink)}
+  .modal .stars{font-size:clamp(22px,3.4vw,34px); letter-spacing:.3em; color:var(--gold);
+    text-shadow:0 0 18px rgba(255,209,102,.6)}
+  button{font-family:inherit; font-weight:700; letter-spacing:.18em;
+    font-size:clamp(11px,1.4vw,14px); color:#0B0A1A; background:var(--gold);
+    border:none; border-radius:999px; padding:.9em 2.6em; cursor:pointer;
+    box-shadow:0 0 24px rgba(255,209,102,.35); transition:transform .15s, box-shadow .15s;}
+  button:hover{transform:translateY(-2px); box-shadow:0 0 34px rgba(255,209,102,.55)}
+  button.ghost{background:transparent; color:var(--dim); box-shadow:none;
+    border:1px solid rgba(140,120,255,.3);}
+  .hint{font-size:.85em; color:var(--dim); letter-spacing:.1em}
+  @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv"></canvas>
+
+  <div id="hud" style="display:none">
+    <div class="hudbox"><span class="lbl">关卡</span><span id="lvname">—</span></div>
+    <div class="hudbox"><span class="lbl">信使探针</span><span id="probes"></span></div>
+    <div class="hudbox"><span class="lbl">光种</span><span id="crys">0 / 0</span></div>
+  </div>
+
+  <div class="modal show" id="m-menu">
+    <h1>引力信使</h1>
+    <p>银河边缘的星港正在熄灭。你是最后的信使，要把<b>光种</b>送进<b>虫洞</b>，点亮归途。<br><br>
+    探针没有引擎——<b>按住并向后拖拽</b>蓄力发射，之后它只服从<b>引力</b>。<br>
+    借行星弯折航线，收齐全部光种，虫洞才会开启。<br>
+    黑洞会吞噬一切，脉冲星会把你推开，轨道预测只能看见前方一小段……剩下的，交给直觉。</p>
+    <button id="b-start">启 程</button>
+    <span class="hint">鼠标 / 触屏拖拽发射 · 探针数量有限</span>
+  </div>
+
+  <div class="modal" id="m-clear">
+    <h2 id="clear-title">航线贯通</h2>
+    <div class="stars" id="clear-stars">★★★</div>
+    <p id="clear-text"></p>
+    <button id="b-next">下一段航程</button>
+  </div>
+
+  <div class="modal" id="m-fail">
+    <h2 style="color:var(--rose)">信号中断</h2>
+    <p>所有探针都消逝在引力之海。星图已重置，光种重新散落。</p>
+    <button id="b-retry">重新发射</button>
+  </div>
+
+  <div class="modal" id="m-end">
+    <h1>抵达彼岸</h1>
+    <div class="stars" id="end-stars"></div>
+    <p id="end-text"></p>
+    <button id="b-again">再跑一次邮路</button>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+const W=960, H=600, G=60000;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let dpr=1, scaleFit=1;
+function resize(){
+  dpr=Math.min(2, window.devicePixelRatio||1);
+  const r=cv.getBoundingClientRect();
+  cv.width=r.width*dpr; cv.height=r.height*dpr;
+  scaleFit=cv.width/W;
+}
+window.addEventListener('resize', resize);
+
+/* ---------------- audio (tiny synth) ---------------- */
+let AC=null;
+function audio(){ try{ if(!AC){AC=new (window.AudioContext||window.webkitAudioContext)();} if(AC&&AC.state==='suspended'){const p=AC.resume(); if(p&&p.catch)p.catch(()=>{});} }catch(e){AC=null;} }
+function tone(f,dur,type='sine',vol=.18,slide=0){
+  if(!AC)return;
+  try{
+  const o=AC.createOscillator(),g=AC.createGain(),t=AC.currentTime;
+  o.type=type;o.frequency.setValueAtTime(f,t);
+  if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(30,f+slide),t+dur);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+  o.connect(g).connect(AC.destination);o.start(t);o.stop(t+dur);
+  }catch(e){}
+}
+const sfx={
+  launch(){tone(220,.35,'sawtooth',.10,-160);tone(440,.2,'triangle',.06,-200);},
+  pick(i){tone(660+i*110,.16,'sine',.16); tone(990+i*110,.22,'sine',.08);},
+  die(){tone(110,.5,'sawtooth',.2,-70);tone(55,.6,'triangle',.18,-20);},
+  portal(){[523,659,784,1047].forEach((f,i)=>setTimeout(()=>tone(f,.4,'sine',.14),i*90));},
+  open(){tone(330,.5,'triangle',.12,200);},
+  lost(){tone(300,.4,'sine',.1,-180);}
+};
+
+/* ---------------- levels ---------------- */
+/* body types: planet | hole(黑洞) | pulsar(斥力) ; orbit:{cx,cy,R,w,ph} */
+const LEVELS=[
+ { name:'第一邮路 · 出发', probes:4, start:[110,300], portal:[860,300],
+   bodies:[ {t:'planet',x:480,y:300,r:38,m:95,c:'#C97B4A',ring:1} ],
+   crystals:[[480,140],[480,460],[700,210]] },
+
+ { name:'第二邮路 · 双子', probes:4, start:[80,90], portal:[880,520],
+   bodies:[ {t:'planet',x:360,y:210,r:30,m:80,c:'#7FB8D8'},
+            {t:'planet',x:610,y:400,r:30,m:80,c:'#9B7BD8'} ],
+   crystals:[[485,305],[280,430],[680,170],[820,330]] },
+
+ { name:'第三邮路 · 黑暗之眼', probes:5, start:[80,300], portal:[880,300],
+   bodies:[ {t:'hole',x:480,y:300,r:26,m:255} ],
+   crystals:[[480,140],[645,300],[480,460],[315,300]] },
+
+ { name:'第四邮路 · 环舞', probes:5, start:[80,300], portal:[880,300],
+   bodies:[ {t:'planet',x:480,y:300,r:20,m:60,c:'#C97B4A'},
+            {t:'planet',r:24,m:105,c:'#7FB8D8',orbit:{cx:480,cy:300,R:155,w:.55,ph:0}} ],
+   crystals:[[250,140],[710,140],[250,460],[710,460],[480,95]] },
+
+ { name:'第五邮路 · 脉冲星', probes:5, start:[80,80], portal:[880,520],
+   bodies:[ {t:'pulsar',x:480,y:300,r:24,m:-190},
+            {t:'planet',x:240,y:170,r:26,m:75,c:'#9B7BD8'},
+            {t:'planet',x:720,y:430,r:26,m:75,c:'#C97B4A',ring:1} ],
+   crystals:[[480,160],[480,440],[150,470],[810,130],[660,300]] },
+
+ { name:'终末邮路 · 星渊回廊', probes:6, start:[80,520], portal:[880,470],
+   bodies:[ {t:'hole',x:480,y:300,r:24,m:230},
+            {t:'planet',r:22,m:80,c:'#7FB8D8',orbit:{cx:480,cy:300,R:195,w:.45,ph:0}},
+            {t:'planet',r:22,m:80,c:'#C97B4A',orbit:{cx:480,cy:300,R:195,w:.45,ph:Math.PI}} ],
+   crystals:[[480,105],[480,495],[285,300],[675,300],[860,115],[120,150]] },
+];
+
+/* ---------------- state ---------------- */
+let mode='menu';          // menu | play | clear | fail | end
+let li=0, level=null, T=0;
+let probesLeft=0, crystals=[], bodies=[], portal=null, portalOpen=false;
+let probe=null;           // {x,y,vx,vy,phase:'aim'|'fly', trail:[], life}
+let drag=null;            // {x,y} current pointer while aiming
+let particles=[], shake=0, flash=0;
+let starsEarned=[], msgT=0, msg='';
+
+const starfield=[]; for(let i=0;i<140;i++)starfield.push({x:Math.random()*W,y:Math.random()*H,s:Math.random()*1.6+.4,p:Math.random()*6.28});
+
+function bodyPos(b,t){
+  if(!b.orbit) return [b.x,b.y];
+  const o=b.orbit; return [o.cx+o.R*Math.cos(o.w*t+o.ph), o.cy+o.R*Math.sin(o.w*t+o.ph)];
+}
+
+function loadLevel(i, keep=false){
+  li=i; level=LEVELS[i]; T=0;
+  bodies=level.bodies.map(b=>({...b, orbit:b.orbit?{...b.orbit}:null}));
+  crystals=level.crystals.map(c=>({x:c[0],y:c[1],got:false,ph:Math.random()*6.28}));
+  portal={x:level.portal[0],y:level.portal[1]}; portalOpen=false;
+  probesLeft=level.probes; particles=[]; shake=0;
+  resetProbe();
+  document.getElementById('lvname').textContent=level.name;
+  updateHUD();
+  toast(level.name);
+}
+function resetProbe(){
+  probe={x:level.start[0],y:level.start[1],vx:0,vy:0,phase:'aim',trail:[],life:14};
+  drag=null;
+}
+function updateHUD(){
+  const pb=document.getElementById('probes'); pb.innerHTML='';
+  for(let i=0;i<level.probes;i++){const s=document.createElement('span'); if(i>=probesLeft)s.className='used'; pb.appendChild(s);}
+  const got=crystals.filter(c=>c.got).length;
+  document.getElementById('crys').textContent=got+' / '+crystals.length;
+}
+function toast(t){msg=t; msgT=2.4;}
+
+/* ---------------- physics ---------------- */
+function accel(px,py,t){
+  let ax=0,ay=0;
+  for(const b of bodies){
+    const [bx,by]=bodyPos(b,t);
+    const dx=bx-px,dy=by-py, d2=dx*dx+dy*dy+220, d=Math.sqrt(d2);
+    const a=G*b.m/d2;
+    ax+=a*dx/d; ay+=a*dy/d;
+  }
+  return [ax,ay];
+}
+function collide(px,py,t){ // returns 'hole'|'planet'|null  (pulsar core also lethal)
+  for(const b of bodies){
+    const [bx,by]=bodyPos(b,t);
+    const d=Math.hypot(bx-px,by-py);
+    if(b.t==='hole' && d<b.r+6) return 'hole';
+    if(b.t!=='hole' && d<b.r+5) return 'planet';
+  }
+  return null;
+}
+
+const DT=1/120;
+function stepProbe(dt){
+  let t=dt;
+  while(t>0){
+    const h=Math.min(DT,t); t-=h;
+    const [ax,ay]=accel(probe.x,probe.y,T);
+    probe.vx+=ax*h; probe.vy+=ay*h;
+    probe.x+=probe.vx*h; probe.y+=probe.vy*h;
+    const hit=collide(probe.x,probe.y,T);
+    if(hit){ killProbe(hit); return; }
+    // crystals
+    for(const c of crystals){
+      if(!c.got && Math.hypot(c.x-probe.x,c.y-probe.y)<17){
+        c.got=true; sfx.pick(crystals.filter(k=>k.got).length);
+        burst(c.x,c.y,'#FFD166',18,2.2); updateHUD();
+        if(crystals.every(k=>k.got)&&!portalOpen){portalOpen=true;sfx.open();toast('虫洞已开启');burst(portal.x,portal.y,'#5EF2E0',30,3);}
+      }
+    }
+    if(portalOpen && Math.hypot(portal.x-probe.x,portal.y-probe.y)<24){ levelClear(); return; }
+    if(probe.x<-70||probe.x>W+70||probe.y<-70||probe.y>H+70){ loseProbe('探针漂入了星际空洞'); return; }
+  }
+  probe.life-=dt;
+  if(probe.life<=0){ loseProbe('探针能量耗尽，沉入永恒轨道'); return; }
+  probe.trail.push([probe.x,probe.y]); if(probe.trail.length>46)probe.trail.shift();
+}
+function killProbe(kind){
+  sfx.die(); shake=14; flash= kind==='hole'? .35:.25;
+  burst(probe.x,probe.y, kind==='hole'?'#FF6B9D':'#FFA94D', 34, 4);
+  afterProbeGone();
+}
+function loseProbe(text){ sfx.lost(); toast(text); burst(probe.x,probe.y,'#8E86B8',12,1.6); afterProbeGone(); }
+function afterProbeGone(){
+  probesLeft--; updateHUD();
+  if(probesLeft<=0){ probe=null; setTimeout(()=>showModal('m-fail'),700); mode='fail'; }
+  else { probe.phase='dead'; setTimeout(()=>{ if(mode==='play')resetProbe(); },800); }
+}
+function levelClear(){
+  sfx.portal(); burst(portal.x,portal.y,'#5EF2E0',46,3.4);
+  const used=level.probes-probesLeft+1;
+  const stars= used<=1?3 : used<=2?2 : 1;
+  starsEarned[li]=stars;
+  mode='clear';
+  document.getElementById('clear-stars').textContent='★★★'.slice(0,stars)+'☆☆☆'.slice(0,3-stars);
+  document.getElementById('clear-title').textContent=level.name+' · 贯通';
+  document.getElementById('clear-text').innerHTML=`本段使用探针 <b>${used}</b> / ${level.probes}。`+(stars===3?'一击贯穿——教科书级的引力弹弓。':stars===2?'干净利落，星图记下了这条弧线。':'有惊无险，光种已安全送达。');
+  setTimeout(()=>showModal('m-clear'),750);
+}
+
+/* ---------------- particles ---------------- */
+function burst(x,y,color,n,sp){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*6.283, s=(Math.random()*.7+.3)*sp*60;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:Math.random()*.6+.4,c:color,r:Math.random()*2.5+1});
+  }
+}
+
+/* ---------------- prediction ---------------- */
+function predict(vx,vy){
+  const pts=[]; let px=probe.x,py=probe.y, t=T;
+  for(let i=0;i<300;i++){
+    const [ax,ay]=accel(px,py,t);
+    vx+=ax*DT; vy+=ay*DT; px+=vx*DT; py+=vy*DT; t+=DT;
+    if(i%5===0)pts.push([px,py]);
+    if(collide(px,py,t)) break;
+    if(px<-70||px>W+70||py<-70||py>H+70) break;
+  }
+  return pts;
+}
+
+/* ---------------- input ---------------- */
+function ptr(e){
+  const r=cv.getBoundingClientRect();
+  const x=(e.clientX-r.left)/r.width*W, y=(e.clientY-r.top)/r.height*H;
+  return [x,y];
+}
+cv.addEventListener('pointerdown',e=>{
+  audio();
+  if(mode!=='play'||!probe||probe.phase!=='aim')return;
+  try{cv.setPointerCapture(e.pointerId);}catch(err){}
+  const [x,y]=ptr(e); drag={sx:x,sy:y,x,y};
+});
+cv.addEventListener('pointermove',e=>{
+  if(drag){const [x,y]=ptr(e); drag.x=x; drag.y=y;}
+});
+cv.addEventListener('pointerup',e=>{
+  if(!drag||!probe||probe.phase!=='aim'){drag=null;return;}
+  const [vx,vy]=dragVel();
+  drag=null;
+  if(Math.hypot(vx,vy)<45)return; // too weak, cancel
+  probe.vx=vx; probe.vy=vy; probe.phase='fly'; sfx.launch();
+});
+function dragVel(){
+  let vx=(drag.sx-drag.x)*2.3, vy=(drag.sy-drag.y)*2.3;
+  const s=Math.hypot(vx,vy), MAX=400;
+  if(s>MAX){vx*=MAX/s; vy*=MAX/s;}
+  return [vx,vy];
+}
+
+/* ---------------- drawing ---------------- */
+function draw(){
+  ctx.setTransform(scaleFit,0,0,scaleFit,0,0);
+  // shake
+  if(shake>0){ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);}
+  // bg
+  const g=ctx.createRadialGradient(W*.5,H*.1,60,W*.5,H*.5,720);
+  g.addColorStop(0,'#1A1342'); g.addColorStop(.55,'#100D2A'); g.addColorStop(1,'#0B0A1A');
+  ctx.fillStyle=g; ctx.fillRect(-20,-20,W+40,H+40);
+  // nebula wisps
+  ctx.globalAlpha=.08;
+  ctx.fillStyle='#FF6B9D'; ctx.beginPath(); ctx.ellipse(W*.78,H*.2,170,70,-.5,0,6.283); ctx.fill();
+  ctx.fillStyle='#5EF2E0'; ctx.beginPath(); ctx.ellipse(W*.18,H*.8,200,80,.4,0,6.283); ctx.fill();
+  ctx.globalAlpha=1;
+  // stars
+  for(const s of starfield){
+    const tw=.45+.55*Math.abs(Math.sin(T*1.4+s.p));
+    ctx.globalAlpha=tw*.85; ctx.fillStyle='#EDE9FF';
+    ctx.fillRect(s.x,s.y,s.s,s.s);
+  }
+  ctx.globalAlpha=1;
+
+  if(level){
+    drawPortal();
+    for(const b of bodies)drawBody(b);
+    for(const c of crystals)if(!c.got)drawCrystal(c);
+  }
+  drawParticles();
+  if(probe)drawProbe();
+  if(drag&&probe&&probe.phase==='aim')drawAim();
+  drawMsg();
+
+  if(flash>0){ctx.fillStyle=`rgba(255,120,140,${flash})`;ctx.fillRect(-20,-20,W+40,H+40);}
+}
+function drawBody(b){
+  const [x,y]=bodyPos(b,T);
+  if(b.orbit){ // faint orbit path
+    ctx.strokeStyle='rgba(140,120,255,.14)'; ctx.setLineDash([3,7]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(b.orbit.cx,b.orbit.cy,b.orbit.R,0,6.283); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if(b.t==='hole'){
+    // accretion disk
+    for(let i=3;i>0;i--){
+      ctx.strokeStyle=i===1?'rgba(255,169,77,.85)':`rgba(255,107,157,${.32/i})`;
+      ctx.lineWidth=i===1?2.5:6*i;
+      ctx.beginPath(); ctx.arc(x,y,b.r+4+i*5+Math.sin(T*3+i)*1.5,0,6.283); ctx.stroke();
+    }
+    const hg=ctx.createRadialGradient(x,y,1,x,y,b.r+2);
+    hg.addColorStop(0,'#000'); hg.addColorStop(.8,'#05030C'); hg.addColorStop(1,'#1a0b16');
+    ctx.fillStyle=hg; ctx.beginPath(); ctx.arc(x,y,b.r,0,6.283); ctx.fill();
+  } else if(b.t==='pulsar'){
+    const pul=1+Math.sin(T*5)*.18;
+    const pg=ctx.createRadialGradient(x,y,1,x,y,b.r*2.4*pul);
+    pg.addColorStop(0,'#FFFFFF'); pg.addColorStop(.35,'#BCE6FF'); pg.addColorStop(1,'rgba(126,200,255,0)');
+    ctx.fillStyle=pg; ctx.beginPath(); ctx.arc(x,y,b.r*2.4*pul,0,6.283); ctx.fill();
+    // repulsion rings expanding
+    for(let i=0;i<3;i++){
+      const rr=((T*40+i*30)%90)+b.r;
+      ctx.strokeStyle=`rgba(188,230,255,${.4*(1-rr/(90+b.r))})`; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(x,y,rr,0,6.283); ctx.stroke();
+    }
+  } else {
+    const pg=ctx.createRadialGradient(x-b.r*.35,y-b.r*.35,b.r*.15,x,y,b.r);
+    pg.addColorStop(0,lighten(b.c)); pg.addColorStop(1,darken(b.c));
+    ctx.fillStyle=pg; ctx.beginPath(); ctx.arc(x,y,b.r,0,6.283); ctx.fill();
+    if(b.ring){ctx.strokeStyle='rgba(237,233,255,.35)';ctx.lineWidth=3;
+      ctx.beginPath(); ctx.ellipse(x,y,b.r*1.7,b.r*.5,-.45,0,6.283); ctx.stroke();}
+    // gravity halo
+    ctx.strokeStyle='rgba(140,120,255,.10)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(x,y,b.r*2.6,0,6.283); ctx.stroke();
+  }
+}
+function lighten(c){return c;} 
+function darken(c){
+  const n=parseInt(c.slice(1),16);
+  const r=(n>>16)*.35|0,g=((n>>8)&255)*.35|0,b=(n&255)*.35|0;
+  return `rgb(${r},${g},${b})`;
+}
+function drawCrystal(c){
+  const fl=Math.sin(T*2.4+c.ph)*4, s=8+Math.sin(T*3+c.ph)*1.2;
+  const x=c.x,y=c.y+fl;
+  ctx.save(); ctx.translate(x,y); ctx.rotate(T*.9+c.ph);
+  const gg=ctx.createRadialGradient(0,0,1,0,0,s*2.6);
+  gg.addColorStop(0,'rgba(255,209,102,.6)'); gg.addColorStop(1,'rgba(255,209,102,0)');
+  ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(0,0,s*2.6,0,6.283); ctx.fill();
+  ctx.fillStyle='#FFD166';
+  ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(s*.62,0); ctx.lineTo(0,s); ctx.lineTo(-s*.62,0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.85)';
+  ctx.beginPath(); ctx.moveTo(0,-s*.5); ctx.lineTo(s*.28,0); ctx.lineTo(0,s*.5); ctx.lineTo(-s*.28,0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawPortal(){
+  const x=portal.x,y=portal.y;
+  if(portalOpen){
+    ctx.save(); ctx.translate(x,y);
+    const gg=ctx.createRadialGradient(0,0,2,0,0,46);
+    gg.addColorStop(0,'rgba(94,242,224,.9)'); gg.addColorStop(.5,'rgba(94,242,224,.25)'); gg.addColorStop(1,'rgba(94,242,224,0)');
+    ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(0,0,46,0,6.283); ctx.fill();
+    for(let i=0;i<3;i++){
+      ctx.rotate(T*(1.2+i*.5)*(i%2?1:-1));
+      ctx.strokeStyle=`rgba(94,242,224,${.8-i*.22})`; ctx.lineWidth=2.5-i*.6;
+      ctx.beginPath(); ctx.arc(0,0,14+i*7,i,4+i); ctx.stroke();
+    }
+    ctx.restore();
+  } else {
+    ctx.strokeStyle='rgba(142,134,184,.5)'; ctx.setLineDash([5,6]); ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x,y,20,T*.6,T*.6+6.283); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(142,134,184,.6)'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('未开启', x, y+38);
+  }
+}
+function drawProbe(){
+  // trail
+  if(probe.trail.length>1){
+    ctx.lineWidth=2; ctx.lineCap='round';
+    for(let i=1;i<probe.trail.length;i++){
+      ctx.strokeStyle=`rgba(94,242,224,${i/probe.trail.length*.55})`;
+      ctx.beginPath(); ctx.moveTo(...probe.trail[i-1]); ctx.lineTo(...probe.trail[i]); ctx.stroke();
+    }
+  }
+  if(probe.phase==='dead')return;
+  const x=probe.x,y=probe.y;
+  const gg=ctx.createRadialGradient(x,y,1,x,y,16);
+  gg.addColorStop(0,'rgba(94,242,224,.8)'); gg.addColorStop(1,'rgba(94,242,224,0)');
+  ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(x,y,16,0,6.283); ctx.fill();
+  ctx.fillStyle='#EFFFFC'; ctx.beginPath(); ctx.arc(x,y,5,0,6.283); ctx.fill();
+  // energy ring shows remaining life while flying
+  if(probe.phase==='fly'){
+    ctx.strokeStyle='rgba(94,242,224,.7)'; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.arc(x,y,9,-Math.PI/2,-Math.PI/2+6.283*(probe.life/14)); ctx.stroke();
+  }
+  if(probe.phase==='aim'&&!drag){ // idle pulse hint
+    const p=8+Math.sin(T*4)*2;
+    ctx.strokeStyle='rgba(255,209,102,.5)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(x,y,p+6,0,6.283); ctx.stroke();
+  }
+}
+function drawAim(){
+  const [vx,vy]=dragVel();
+  const s=Math.hypot(vx,vy);
+  // slingshot band
+  ctx.strokeStyle='rgba(255,209,102,.8)'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(probe.x,probe.y);
+  ctx.lineTo(probe.x-vx*.16,probe.y-vy*.16); ctx.stroke();
+  // power gauge
+  ctx.fillStyle='rgba(255,209,102,.9)'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(Math.round(s/4)+'%', probe.x-vx*.16, probe.y-vy*.16-10);
+  // predicted path (limited & fading — intentionally short)
+  const pts=predict(vx,vy);
+  const show=Math.min(pts.length, 26);
+  for(let i=0;i<show;i++){
+    ctx.globalAlpha=(1-i/show)*.8;
+    ctx.fillStyle='#5EF2E0';
+    ctx.beginPath(); ctx.arc(pts[i][0],pts[i][1],2.2-i*.05,0,6.283); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+function drawParticles(){
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life)*1.4;
+    ctx.fillStyle=p.c;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.283); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+function drawMsg(){
+  if(msgT<=0)return;
+  ctx.globalAlpha=Math.min(1,msgT);
+  ctx.fillStyle='#EDE9FF'; ctx.font='700 15px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(msg, W/2, 64);
+  ctx.globalAlpha=1;
+}
+
+/* ---------------- loop ---------------- */
+let last=performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  let dt=(now-last)/1000; last=now;
+  if(dt>0.05)dt=0.05;
+  T+=dt;
+  if(shake>0)shake=Math.max(0,shake-dt*40);
+  if(flash>0)flash=Math.max(0,flash-dt*1.2);
+  if(msgT>0)msgT-=dt;
+  for(const p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.97;p.vy*=.97;p.life-=dt;}
+  particles=particles.filter(p=>p.life>0);
+  if(mode==='play'&&probe&&probe.phase==='fly')stepProbe(dt);
+  try{ draw(); }catch(err){ if(!loop._warned){loop._warned=1;console.warn('render skip:',err);} }
+}
+
+/* ---------------- modals / flow ---------------- */
+function showModal(id){
+  document.querySelectorAll('.modal').forEach(m=>m.classList.remove('show'));
+  if(id)document.getElementById(id).classList.add('show');
+}
+document.getElementById('b-start').onclick=()=>{
+  audio(); showModal(null);
+  document.getElementById('hud').style.display='flex';
+  starsEarned=[]; mode='play'; loadLevel(0);
+};
+document.getElementById('b-next').onclick=()=>{
+  showModal(null);
+  if(li+1<LEVELS.length){ mode='play'; loadLevel(li+1); }
+  else{
+    const total=starsEarned.reduce((a,b)=>a+(b||0),0), max=LEVELS.length*3;
+    document.getElementById('end-stars').textContent=`★ ${total} / ${max}`;
+    document.getElementById('end-text').innerHTML =
+      total===max ? '满星贯通！整条邮路没有浪费一颗探针——你就是引力本身。'
+      : total>=max*0.7 ? `光种全部送达，星港重新亮起。<b>${total}</b> 颗星记入信使档案。`
+      : `邮路虽颠簸，但光最终抵达了。<b>${total}</b> 颗星——下次试试更少的探针？`;
+    mode='end'; showModal('m-end');
+  }
+};
+document.getElementById('b-retry').onclick=()=>{ showModal(null); mode='play'; loadLevel(li); };
+document.getElementById('b-again').onclick=()=>{ showModal(null); starsEarned=[]; mode='play'; loadLevel(0); };
+
+resize();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
