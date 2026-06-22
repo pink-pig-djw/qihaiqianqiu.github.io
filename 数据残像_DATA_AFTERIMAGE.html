@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>数据残像 · DATA AFTERIMAGE</title>
+<style>
+/* ============ 设计令牌 ============ */
+:root{
+  --mono:'Cascadia Code','SF Mono','JetBrains Mono','Fira Code',Menlo,Consolas,'DejaVu Sans Mono','Noto Sans Mono','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Source Han Sans SC','Noto Sans CJK SC',monospace;
+  --bg:#04070a;
+  --screen-bg:#06120b;
+  --phosphor:#36f0a0;        /* 翠绿磷光主色 */
+  --phosphor-dim:#1f7a52;
+  --phosphor-bright:#c8ffe6;
+  --amber:#ffc24d;
+  --danger:#ff4242;
+  --danger-bright:#ff8a8a;
+  --danger-dim:#7a1f1f;
+  --ocean:#46b6ff;
+  --ocean-deep:#0a2740;
+  --mosaic:#ff3df0;
+  --glow:0 0 1px currentColor,0 0 6px rgba(54,240,160,.55);
+  --scan-op:.20;
+  --flick-op:1;
+}
+/* 主题：红色危机 */
+.theme-red{
+  --screen-bg:#160707;
+  --phosphor:#ff4646;
+  --phosphor-dim:#8a2323;
+  --phosphor-bright:#ffd0d0;
+  --glow:0 0 1px currentColor,0 0 7px rgba(255,70,70,.6);
+}
+/* 主题：光之海（结局C） */
+.theme-blue{
+  --screen-bg:#04111f;
+  --phosphor:#5ec4ff;
+  --phosphor-dim:#2a6a9a;
+  --phosphor-bright:#dff3ff;
+  --glow:0 0 1px currentColor,0 0 8px rgba(94,196,255,.5);
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  font-family:var(--mono);
+  color:var(--phosphor);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  letter-spacing:.3px;
+}
+.hidden{display:none !important}
+b{font-weight:700;color:var(--phosphor-bright)}
+
+/* ============ 通电开机屏 ============ */
+.power{
+  position:fixed;inset:0;z-index:50;
+  display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at center,#0a1410 0%,#04070a 70%);
+}
+.power-inner{text-align:center;animation:powerIn .8s ease}
+@keyframes powerIn{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+.logo{
+  font-size:clamp(28px,7vw,64px);font-weight:800;letter-spacing:8px;
+  color:var(--phosphor);text-shadow:var(--glow);
+}
+.logo-sub{margin-top:10px;color:var(--phosphor-dim);letter-spacing:5px;font-size:clamp(11px,2.4vw,15px)}
+.power-btn{
+  margin-top:42px;padding:16px 38px;font-family:var(--mono);font-size:17px;letter-spacing:3px;
+  background:transparent;color:var(--phosphor);border:1px solid var(--phosphor-dim);
+  cursor:pointer;text-shadow:var(--glow);transition:.25s;border-radius:2px;
+}
+.power-btn:hover,.power-btn:focus-visible{background:rgba(54,240,160,.10);border-color:var(--phosphor);box-shadow:0 0 18px rgba(54,240,160,.25);outline:none}
+.power-note{margin-top:26px;color:var(--phosphor-dim);font-size:12px;letter-spacing:2px;opacity:.8}
+
+/* ============ CRT 外壳与屏幕 ============ */
+.crt{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:min(3vmin,26px)}
+.bezel{
+  position:relative;width:100%;max-width:1080px;height:100%;max-height:760px;
+  background:linear-gradient(#0c1512,#070d0a);
+  border-radius:18px;
+  padding:clamp(10px,2.2vmin,22px);
+  box-shadow:0 0 0 2px #0a120e,0 22px 60px rgba(0,0,0,.7),inset 0 0 30px rgba(0,0,0,.6);
+}
+.screen{
+  position:relative;width:100%;height:100%;overflow:hidden;
+  background:radial-gradient(ellipse at center,color-mix(in srgb,var(--screen-bg) 88%,#0c2018) 0%,var(--screen-bg) 80%);
+  border-radius:10px;
+  display:flex;flex-direction:column;
+  box-shadow:inset 0 0 70px rgba(0,0,0,.85),inset 0 0 8px color-mix(in srgb,var(--phosphor) 20%,transparent);
+  transition:background .9s ease,box-shadow .9s ease;
+}
+/* 叠加层 */
+.overlay{position:absolute;inset:0;pointer-events:none;border-radius:10px;z-index:5}
+.scanlines{
+  background:repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0px,rgba(0,0,0,0) 2px,rgba(0,0,0,var(--scan-op)) 3px,rgba(0,0,0,var(--scan-op)) 4px);
+  mix-blend-mode:multiply;
+}
+.vignette{box-shadow:inset 0 0 120px 30px rgba(0,0,0,.55);background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.35) 100%)}
+.flicker{background:color-mix(in srgb,var(--phosphor) 4%,transparent);opacity:0;animation:flick 7s steps(60) infinite}
+@keyframes flick{0%,96%,100%{opacity:0}97%{opacity:.10}98%{opacity:0}99%{opacity:.06}}
+.glitch{z-index:8;opacity:0;mix-blend-mode:screen}
+.glitch.on{animation:glitchFlash .55s steps(8)}
+@keyframes glitchFlash{
+  0%{opacity:0}
+  10%{opacity:.9;background:linear-gradient(transparent 40%,rgba(255,61,240,.18) 42%,transparent 44%),linear-gradient(transparent 70%,rgba(70,182,255,.18) 72%,transparent 74%);transform:translateX(-3px)}
+  30%{opacity:.7;background:rgba(255,66,66,.12);transform:translateX(4px) skewX(-1deg)}
+  55%{opacity:.85;background:repeating-linear-gradient(to bottom,rgba(255,255,255,.06) 0 1px,transparent 1px 5px);transform:translateX(-2px)}
+  100%{opacity:0;transform:none}
+}
+
+/* ============ 状态栏 ============ */
+.statusbar{
+  flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:8px 14px;font-size:12px;letter-spacing:1px;
+  border-bottom:1px solid color-mix(in srgb,var(--phosphor) 25%,transparent);
+  color:var(--phosphor-dim);text-shadow:var(--glow);
+  background:color-mix(in srgb,var(--phosphor) 5%,transparent);
+  z-index:6;flex-wrap:wrap;
+}
+.statusbar b{color:var(--phosphor)}
+.sb-mid{color:var(--danger);letter-spacing:2px;animation:blink 1.1s steps(2) infinite;font-weight:700}
+.sb-mid:empty{display:none}
+@keyframes blink{50%{opacity:.25}}
+.sb-timer{margin-left:14px;color:var(--danger);font-weight:800;font-size:14px;letter-spacing:1px}
+.sb-timer.warn{animation:blink .5s steps(2) infinite}
+
+/* ============ 桌面 / 日志 ============ */
+.desktop{flex:1 1 auto;position:relative;overflow:hidden;z-index:6}
+.log{
+  position:absolute;inset:0;overflow-y:auto;padding:20px clamp(16px,3.5vw,40px) 26px;
+  scroll-behavior:smooth;
+}
+.log::-webkit-scrollbar{width:8px}
+.log::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--phosphor) 30%,transparent);border-radius:8px}
+.log::-webkit-scrollbar-track{background:transparent}
+
+.line{margin:0 0 9px;line-height:1.65;font-size:clamp(13px,2.5vw,15.5px);white-space:pre-wrap;word-break:break-word;text-shadow:var(--glow);animation:lineIn .25s ease}
+@keyframes lineIn{from{opacity:0}to{opacity:1}}
+.sys{color:var(--phosphor)}
+.sys::before{content:"";color:var(--phosphor-dim)}
+.dim{color:var(--phosphor-dim);font-size:12.5px}
+.warnline{color:var(--amber);text-shadow:0 0 6px rgba(255,194,77,.4)}
+.dangerline{color:var(--danger);text-shadow:0 0 7px rgba(255,66,66,.45);font-weight:600}
+.corrupt{color:var(--mosaic);text-shadow:0 0 8px rgba(255,61,240,.5);letter-spacing:1px}
+.muted-data{color:var(--phosphor-dim);opacity:.55}
+
+/* 对话块 */
+.speak{margin:14px 0;padding:12px 16px;border-left:2px solid var(--phosphor-dim);background:color-mix(in srgb,var(--phosphor) 5%,transparent);animation:lineIn .3s ease}
+.speak.beta{border-color:var(--danger)}
+.speak.child{border-color:var(--ocean)}
+.speak.lian{border-color:var(--amber)}
+.speak .who{font-size:11px;letter-spacing:3px;color:var(--phosphor-dim);text-transform:uppercase;margin-bottom:6px}
+.speak.beta .who{color:var(--danger)}
+.speak.child .who{color:var(--ocean)}
+.speak.lian .who{color:var(--amber)}
+.speak .txt{line-height:1.68;font-size:clamp(13.5px,2.6vw,16px);text-shadow:var(--glow)}
+.speak.child .txt{color:var(--ocean);text-shadow:0 0 7px rgba(70,182,255,.4)}
+
+/* 邮件卡片 */
+.mail{margin:16px 0;border:1px solid var(--phosphor-dim);border-radius:4px;overflow:hidden;animation:lineIn .35s ease}
+.mail-hd{display:flex;justify-content:space-between;gap:8px;padding:9px 14px;background:color-mix(in srgb,var(--amber) 14%,transparent);border-bottom:1px solid var(--phosphor-dim);font-size:12px;color:var(--amber);letter-spacing:1px;flex-wrap:wrap}
+.mail-tag{background:var(--amber);color:#1a1200;padding:1px 7px;border-radius:2px;font-weight:800;font-size:10px;letter-spacing:1px}
+.mail-bd{padding:14px 16px;line-height:1.7;font-size:14px}
+
+/* 光标 */
+.cursor{display:inline-block;width:9px;height:1.05em;background:var(--phosphor);vertical-align:text-bottom;margin-left:2px;box-shadow:var(--glow);animation:curBlink 1s steps(2) infinite}
+@keyframes curBlink{50%{opacity:0}}
+
+/* ============ 选项按钮 ============ */
+.choices{margin:20px 0 8px;display:flex;flex-direction:column;gap:10px;animation:lineIn .4s ease}
+.choice{
+  text-align:left;font-family:var(--mono);font-size:clamp(13px,2.5vw,15px);
+  padding:13px 16px;background:transparent;color:var(--phosphor);
+  border:1px solid var(--phosphor-dim);border-radius:3px;cursor:pointer;
+  transition:.18s;line-height:1.5;text-shadow:var(--glow);position:relative;
+}
+.choice:hover,.choice:focus-visible{background:color-mix(in srgb,var(--phosphor) 12%,transparent);border-color:var(--phosphor);transform:translateX(4px);outline:none}
+.choice .ck{color:var(--phosphor-dim);margin-right:8px}
+.choice.danger{border-color:var(--danger-dim);color:var(--danger-bright)}
+.choice.danger:hover{background:rgba(255,66,66,.12);border-color:var(--danger)}
+.choice.locked{opacity:.45;cursor:not-allowed;border-style:dashed}
+.choice.locked:hover{transform:none;background:transparent;border-color:var(--phosphor-dim)}
+.choice .tagcost{float:right;font-size:11px;color:var(--phosphor-dim);letter-spacing:1px}
+
+/* 继续提示 */
+.conthint{margin:8px 0 4px;color:var(--phosphor-dim);font-size:12px;letter-spacing:2px;cursor:pointer;animation:blink 1.4s steps(2) infinite;user-select:none}
+.conthint:hover{color:var(--phosphor)}
+
+/* ============ 任务栏 ============ */
+.taskbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:7px 12px;
+  border-top:1px solid color-mix(in srgb,var(--phosphor) 22%,transparent);
+  background:color-mix(in srgb,var(--phosphor) 5%,transparent);
+  font-size:11px;color:var(--phosphor-dim);letter-spacing:1px;z-index:6;flex-wrap:wrap;min-height:32px;
+}
+.tb-chip{padding:3px 9px;border:1px solid color-mix(in srgb,var(--phosphor) 22%,transparent);border-radius:2px}
+.tb-spacer{flex:1}
+
+/* ============ 静音按钮 ============ */
+.mute{position:fixed;top:14px;right:16px;z-index:60;width:38px;height:38px;border-radius:50%;
+  background:rgba(6,18,11,.8);border:1px solid var(--phosphor-dim);color:var(--phosphor);
+  font-size:16px;cursor:pointer;transition:.2s;text-shadow:var(--glow)}
+.mute:hover,.mute:focus-visible{border-color:var(--phosphor);box-shadow:0 0 12px rgba(54,240,160,.3);outline:none}
+.mute.off{color:var(--phosphor-dim);border-color:#333}
+
+/* ============ 小游戏面板通用 ============ */
+.panel{position:absolute;inset:0;overflow-y:auto;padding:18px clamp(14px,3vw,32px);z-index:7;background:var(--screen-bg);animation:lineIn .3s ease}
+.panel::-webkit-scrollbar{width:8px}
+.panel::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--phosphor) 30%,transparent);border-radius:8px}
+.p-title{font-size:13px;letter-spacing:3px;color:var(--phosphor-dim);border-bottom:1px solid var(--phosphor-dim);padding-bottom:8px;margin-bottom:14px;text-transform:uppercase}
+.p-desc{font-size:13px;line-height:1.6;color:var(--phosphor);margin-bottom:16px;text-shadow:var(--glow)}
+.p-desc .hl{color:var(--amber)}
+
+/* 文件管理器 */
+.fm{display:flex;flex-direction:column;gap:8px}
+.fm-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid color-mix(in srgb,var(--phosphor) 20%,transparent);border-radius:3px;cursor:pointer;transition:.15s;font-size:13.5px;text-shadow:var(--glow)}
+.fm-item:hover{background:color-mix(in srgb,var(--phosphor) 10%,transparent);border-color:var(--phosphor);transform:translateX(3px)}
+.fm-item .ico{color:var(--phosphor-dim)}
+.fm-item .sz{margin-left:auto;color:var(--phosphor-dim);font-size:11px}
+.fm-item.opened{opacity:.5}
+.fm-item.opened .sz::after{content:" ✓ 已读"}
+
+/* 逻辑网格 */
+.grid-wrap{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:560px){.grid-wrap{grid-template-columns:1fr}}
+.grid-col h4{font-size:11px;letter-spacing:2px;color:var(--phosphor-dim);margin-bottom:10px;text-transform:uppercase}
+.gcard{padding:11px 13px;margin-bottom:9px;border:1px solid color-mix(in srgb,var(--phosphor) 25%,transparent);border-radius:3px;cursor:pointer;font-size:13px;line-height:1.5;transition:.15s;text-shadow:var(--glow);position:relative}
+.gcard:hover{border-color:var(--phosphor);background:color-mix(in srgb,var(--phosphor) 8%,transparent)}
+.gcard.sel{border-color:var(--amber);background:color-mix(in srgb,var(--amber) 12%,transparent);color:var(--amber)}
+.gcard.done{border-color:var(--phosphor);background:color-mix(in srgb,var(--phosphor) 14%,transparent);cursor:default;opacity:.8}
+.gcard.done::after{content:"✓";position:absolute;right:10px;top:9px;color:var(--phosphor)}
+.gcard.bad{animation:shake .35s}
+@keyframes shake{0%,100%{transform:none}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+.gcard .gc-corrupt{color:var(--mosaic)}
+
+/* 音频解码器 */
+.dec-wave{width:100%;height:140px;border:1px solid var(--phosphor-dim);border-radius:4px;background:#030a07;display:block;margin-bottom:14px}
+.dec-row{display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap}
+.dec-row label{font-size:12px;color:var(--phosphor-dim);letter-spacing:1px;min-width:84px}
+.slider{-webkit-appearance:none;appearance:none;flex:1;min-width:160px;height:4px;background:var(--phosphor-dim);border-radius:3px;outline:none}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--phosphor);cursor:pointer;box-shadow:0 0 8px rgba(54,240,160,.6)}
+.slider::-moz-range-thumb{width:18px;height:18px;border:none;border-radius:50%;background:var(--phosphor);cursor:pointer}
+.dec-lock{height:8px;background:#030a07;border:1px solid var(--phosphor-dim);border-radius:5px;overflow:hidden;margin:6px 0 16px}
+.dec-lock i{display:block;height:100%;width:0;background:var(--phosphor);box-shadow:0 0 8px var(--phosphor);transition:width .1s linear}
+.dec-readout{font-size:12px;color:var(--phosphor-dim);letter-spacing:1px;margin-bottom:10px}
+
+/* 控制台 */
+.term{background:#020705;border:1px solid var(--phosphor-dim);border-radius:4px;padding:14px;font-size:13px;line-height:1.6;min-height:200px;max-height:42vh;overflow-y:auto;margin-bottom:14px}
+.term::-webkit-scrollbar{width:6px}.term::-webkit-scrollbar-thumb{background:var(--phosphor-dim)}
+.term .t-out{color:var(--phosphor);text-shadow:var(--glow);white-space:pre-wrap;margin-bottom:3px}
+.term .t-cmd{color:var(--amber)}.term .t-cmd::before{content:"❯ ";color:var(--phosphor-dim)}
+.term .t-err{color:var(--danger)}
+.term .t-ok{color:var(--phosphor-bright)}
+.cmd-chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-family:var(--mono);font-size:12.5px;padding:8px 13px;border:1px solid var(--phosphor-dim);border-radius:3px;background:transparent;color:var(--phosphor);cursor:pointer;transition:.15s;text-shadow:var(--glow)}
+.chip:hover,.chip:focus-visible{border-color:var(--phosphor);background:color-mix(in srgb,var(--phosphor) 10%,transparent);outline:none}
+.chip.danger{color:var(--danger-bright);border-color:var(--danger-dim)}
+.chip.danger:hover{background:rgba(255,66,66,.1);border-color:var(--danger)}
+
+/* 无脸照片 */
+.photo{margin:18px auto;max-width:330px;border:2px solid var(--phosphor-dim);background:#020705;padding:14px;text-align:center;animation:lineIn .5s ease}
+.photo-canvas{width:100%;image-rendering:pixelated;border:1px solid var(--phosphor-dim)}
+.photo-cap{margin-top:10px;font-size:11px;color:var(--phosphor-dim);letter-spacing:1px;line-height:1.5}
+
+/* 内存块表 */
+.memtable{width:100%;border-collapse:collapse;margin:14px 0;font-size:12px}
+.memtable th,.memtable td{border:1px solid color-mix(in srgb,var(--phosphor) 22%,transparent);padding:8px 10px;text-align:left;line-height:1.5}
+.memtable th{color:var(--phosphor-dim);letter-spacing:1px;font-weight:700;background:color-mix(in srgb,var(--phosphor) 6%,transparent)}
+.memtable td{text-shadow:var(--glow)}
+.memtable .pol-neg{color:var(--danger)}
+.memtable .pol-num{color:var(--phosphor-dim)}
+
+/* 倒计时大屏 */
+.bigtimer{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:9;font-size:clamp(22px,6vw,40px);font-weight:800;color:var(--danger);text-shadow:0 0 14px rgba(255,66,66,.6);letter-spacing:2px;pointer-events:none}
+
+/* 结局海 */
+.sea{position:absolute;inset:0;background:linear-gradient(180deg,#04111f 0%,#072036 45%,#0a2b48 100%);display:flex;align-items:center;justify-content:center;z-index:8;overflow:hidden}
+.sea pre{color:var(--ocean);font-size:clamp(7px,1.6vw,12px);line-height:1.15;text-shadow:0 0 8px rgba(70,182,255,.4);opacity:.9}
+.sea-cur{position:absolute;bottom:40px;left:50%;transform:translateX(-50%);width:10px;height:18px;background:var(--ocean);box-shadow:0 0 12px var(--ocean);animation:curBlink 1.2s steps(2) infinite}
+
+/* 屏幕震动 */
+.shake-screen{animation:scshake .4s linear}
+@keyframes scshake{0%,100%{transform:none}10%{transform:translate(-3px,2px)}30%{transform:translate(4px,-3px)}50%{transform:translate(-4px,1px)}70%{transform:translate(3px,3px)}90%{transform:translate(-2px,-2px)}}
+
+/* 标题大字 */
+.chapter-card{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;gap:14px;animation:lineIn .6s ease}
+.chapter-no{font-size:12px;letter-spacing:6px;color:var(--phosphor-dim)}
+.chapter-title{font-size:clamp(24px,6vw,46px);font-weight:800;letter-spacing:4px;text-shadow:var(--glow)}
+.chapter-en{font-size:12px;letter-spacing:4px;color:var(--phosphor-dim)}
+
+/* 无障碍 / 动效偏好 */
+@media (prefers-reduced-motion: reduce){
+  .flicker,.glitch.on{animation:none !important}
+  *{scroll-behavior:auto !important}
+  .sb-mid,.sb-timer.warn,.cursor,.conthint,.sea-cur{animation:none !important}
+}
+@media (max-width:600px){
+  .bezel{border-radius:12px;padding:8px}
+  .statusbar{font-size:10.5px;padding:6px 9px}
+}
+</style>
+</head>
+<body>
+
+<div id="power" class="power">
+  <div class="power-inner">
+    <div class="logo">CORE-MATRIX</div>
+    <div class="logo-sub">意 识 托 管 · 操 作 员 终 端</div>
+    <button id="power-btn" class="power-btn" aria-label="通电开机">&#9679; 通电开机</button>
+    <div class="power-note">建议佩戴耳机 · 本作含程序化生成的音乐与音效</div>
+  </div>
+</div>
+
+<button id="mute" class="mute" aria-label="切换静音">&#9834;</button>
+
+<div id="crt" class="crt theme-green hidden">
+  <div class="bezel">
+    <div class="screen" id="screen">
+      <header class="statusbar" id="statusbar">
+        <span class="sb-left">CORE-MATRIX&nbsp;OS&nbsp;·&nbsp;操作员&nbsp;<b>#9527</b></span>
+        <span class="sb-mid" id="sb-monitor"></span>
+        <span class="sb-right">合规积分&nbsp;<b id="sb-score">100</b><span id="sb-timer" class="sb-timer hidden"></span></span>
+      </header>
+      <main class="desktop" id="desktop">
+        <div class="log" id="log"></div>
+      </main>
+      <footer class="taskbar" id="taskbar">
+        <span class="tb-chip" id="tb-ch">序章</span>
+        <span class="tb-chip" id="tb-date">2085-09-27</span>
+        <span class="tb-spacer"></span>
+        <span class="tb-chip">NEURAL-LINK 已连接</span>
+      </footer>
+    </div>
+    <div class="overlay scanlines"></div>
+    <div class="overlay vignette"></div>
+    <div class="overlay flicker"></div>
+    <div class="overlay glitch" id="glitch"></div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   音频引擎 — 全程序化合成（Web Audio API），无外部音频文件
+   背景氛围乐 + 机械键盘 + 电子哀鸣 + 小女孩笑声 + 警报 + 解锁音
+   ========================================================= */
+const Audio = {
+  ctx:null, master:null, musicBus:null, sfxBus:null, reverb:null,
+  muted:false, layers:[], theme:null, _klaxon:null, _tickTimer:null,
+
+  init(){
+    if(this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain(); this.master.gain.value = 0.0;
+    this.master.connect(this.ctx.destination);
+    // 上电淡入
+    this.master.gain.linearRampToValueAtTime(0.85, this.ctx.currentTime + 1.2);
+    this.musicBus = this.ctx.createGain(); this.musicBus.gain.value = 0.55; this.musicBus.connect(this.master);
+    this.sfxBus = this.ctx.createGain(); this.sfxBus.gain.value = 0.9; this.sfxBus.connect(this.master);
+    this.reverb = this._makeReverb(2.6, 2.4);
+    const rg = this.ctx.createGain(); rg.gain.value = 0.5; this.reverb.connect(rg); rg.connect(this.master);
+    this.reverbIn = this.reverb;
+  },
+  now(){ return this.ctx ? this.ctx.currentTime : 0; },
+  resume(){ if(this.ctx && this.ctx.state==='suspended') this.ctx.resume(); },
+
+  _makeReverb(seconds, decay){
+    const ctx=this.ctx, rate=ctx.sampleRate, len=rate*seconds;
+    const buf=ctx.createBuffer(2,len,rate);
+    for(let c=0;c<2;c++){ const d=buf.getChannelData(c);
+      for(let i=0;i<len;i++){ d[i]=(Math.random()*2-1)*Math.pow(1-i/len,decay); } }
+    const conv=ctx.createConvolver(); conv.buffer=buf; return conv;
+  },
+  _noiseBuffer(seconds){
+    const ctx=this.ctx, len=ctx.sampleRate*seconds, buf=ctx.createBuffer(1,len,ctx.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i]=Math.random()*2-1; return buf;
+  },
+
+  toggleMute(){
+    this.muted=!this.muted;
+    if(this.master) this.master.gain.setTargetAtTime(this.muted?0:0.85, this.now(), 0.08);
+    return this.muted;
+  },
+
+  /* ---------------- 音效 ---------------- */
+  key(){ // 机械键盘单击
+    if(!this.ctx||this.muted) return;
+    const t=this.now(), src=this.ctx.createBufferSource(); src.buffer=this._noiseBuffer(0.04);
+    const bp=this.ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1400+Math.random()*900; bp.Q.value=1.2;
+    const g=this.ctx.createGain(); g.gain.setValueAtTime(0.0,t); g.gain.linearRampToValueAtTime(0.10+Math.random()*0.05,t+0.002); g.gain.exponentialRampToValueAtTime(0.0008,t+0.05);
+    src.connect(bp); bp.connect(g); g.connect(this.sfxBus); src.start(t); src.stop(t+0.06);
+    // 低频"哒"
+    const o=this.ctx.createOscillator(); o.type='triangle'; o.frequency.setValueAtTime(180,t); o.frequency.exponentialRampToValueAtTime(70,t+0.04);
+    const g2=this.ctx.createGain(); g2.gain.setValueAtTime(0.06,t); g2.gain.exponentialRampToValueAtTime(0.001,t+0.045);
+    o.connect(g2); g2.connect(this.sfxBus); o.start(t); o.stop(t+0.05);
+  },
+  beep(freq=880,dur=0.09,type='square',vol=0.14){
+    if(!this.ctx||this.muted) return;
+    const t=this.now(), o=this.ctx.createOscillator(), g=this.ctx.createGain();
+    o.type=type; o.frequency.value=freq;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.006); g.gain.setValueAtTime(vol,t+dur*0.6); g.gain.exponentialRampToValueAtTime(0.0008,t+dur);
+    o.connect(g); g.connect(this.sfxBus); o.start(t); o.stop(t+dur+0.02);
+  },
+  bootBeeps(){
+    if(!this.ctx) return;
+    [ [523,0.07],[0,0.06],[392,0.07],[0,0.05],[659,0.10] ].reduce((tOff,[f,d])=>{
+      if(f) setTimeout(()=>this.beep(f,d,'square',0.10), tOff*1000);
+      return tOff+d;
+    },0.1);
+  },
+  error(){ // 报错蜂鸣
+    if(!this.ctx||this.muted) return;
+    const t=this.now();
+    for(let i=0;i<2;i++){ const o=this.ctx.createOscillator(),g=this.ctx.createGain();
+      o.type='sawtooth'; o.frequency.value=i?150:120;
+      const s=t+i*0.13; g.gain.setValueAtTime(0,s); g.gain.linearRampToValueAtTime(0.16,s+0.01); g.gain.exponentialRampToValueAtTime(0.001,s+0.11);
+      o.connect(g); g.connect(this.sfxBus); o.start(s); o.stop(s+0.12); }
+  },
+  glitch(){ // 数据撕裂 / 0xDEADBEEF
+    if(!this.ctx||this.muted) return;
+    const t=this.now(), src=this.ctx.createBufferSource(); src.buffer=this._noiseBuffer(0.5);
+    const bp=this.ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.setValueAtTime(400,t); bp.frequency.exponentialRampToValueAtTime(5000,t+0.18); bp.frequency.exponentialRampToValueAtTime(300,t+0.45); bp.Q.value=6;
+    const g=this.ctx.createGain(); g.gain.setValueAtTime(0,t);
+    // 颤动门限，制造比特碎裂感
+    for(let i=0;i<14;i++){ const tt=t+i*0.032; g.gain.setValueAtTime(Math.random()*0.22, tt); }
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+    src.connect(bp); bp.connect(g); g.connect(this.sfxBus); g.connect(this.reverbIn); src.start(t); src.stop(t+0.5);
+    // 下滑方波
+    const o=this.ctx.createOscillator(),og=this.ctx.createGain(); o.type='square';
+    o.frequency.setValueAtTime(900,t); o.frequency.exponentialRampToValueAtTime(60,t+0.4);
+    og.gain.setValueAtTime(0.10,t); og.gain.exponentialRampToValueAtTime(0.001,t+0.42);
+    o.connect(og); og.connect(this.sfxBus); o.start(t); o.stop(t+0.45);
+  },
+  formatWail(){ // 格式化：凄厉的电子哀鸣
+    if(!this.ctx||this.muted) return;
+    const t=this.now();
+    const o=this.ctx.createOscillator(),o2=this.ctx.createOscillator(),g=this.ctx.createGain();
+    o.type='sawtooth'; o2.type='sawtooth'; o2.detune.value=14;
+    o.frequency.setValueAtTime(880,t); o.frequency.exponentialRampToValueAtTime(1760,t+0.18); o.frequency.exponentialRampToValueAtTime(45,t+1.5);
+    o2.frequency.setValueAtTime(884,t); o2.frequency.exponentialRampToValueAtTime(1770,t+0.18); o2.frequency.exponentialRampToValueAtTime(44,t+1.5);
+    const lp=this.ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(4000,t); lp.frequency.exponentialRampToValueAtTime(200,t+1.5); lp.Q.value=8;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.20,t+0.05); g.gain.setValueAtTime(0.20,t+0.6); g.gain.exponentialRampToValueAtTime(0.001,t+1.6);
+    o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.sfxBus); g.connect(this.reverbIn);
+    o.start(t); o2.start(t); o.stop(t+1.65); o2.stop(t+1.65);
+    // 末尾归零的"咔"
+    setTimeout(()=>this.beep(2200,0.05,'square',0.10),1550);
+  },
+  laugh(eerie=false){ // 小女孩的笑声（程序化、克制的"哈哈哈"，刻意带不真实感）
+    if(!this.ctx||this.muted) return;
+    const t0=this.now();
+    const syl=[0,0.155,0.30,0.45,0.61];
+    const pitch=eerie?[300,360,330,300,260]:[540,660,610,720,560];
+    syl.forEach((dt,i)=>{
+      const t=t0+dt;
+      const o=this.ctx.createOscillator(); o.type='sine';
+      const f=pitch[i]*(eerie?(0.7+Math.random()*0.3):1);
+      o.frequency.setValueAtTime(f*0.88,t); o.frequency.exponentialRampToValueAtTime(f,t+0.04); o.frequency.exponentialRampToValueAtTime(f*0.8,t+0.12);
+      if(eerie) o.detune.setValueAtTime(-30+Math.random()*60,t);
+      const o3=this.ctx.createOscillator(); o3.type='sine'; o3.frequency.value=f*2.0; // 上方泛音，像声带
+      const bp=this.ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=eerie?900:1500; bp.Q.value=4;
+      const g=this.ctx.createGain(); g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.16,t+0.02); g.gain.exponentialRampToValueAtTime(0.0008,t+0.135);
+      const gh=this.ctx.createGain(); gh.gain.value=0.04;
+      o.connect(bp); o3.connect(gh); gh.connect(bp); bp.connect(g); g.connect(this.sfxBus); g.connect(this.reverbIn);
+      o.start(t); o3.start(t); o.stop(t+0.15); o3.stop(t+0.15);
+    });
+  },
+  unlock(){ // 解锁/成功的上行琶音
+    if(!this.ctx||this.muted) return;
+    [523,659,784,1047].forEach((f,i)=> setTimeout(()=>this.beep(f,0.16,'triangle',0.12), i*70));
+  },
+  goodPing(){ this.beep(1320,0.10,'sine',0.10); },
+  radioBlip(){ // 依依的微弱无线电波
+    if(!this.ctx||this.muted) return;
+    const t=this.now(), src=this.ctx.createBufferSource(); src.buffer=this._noiseBuffer(0.3);
+    const bp=this.ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=2200; bp.Q.value=8;
+    const g=this.ctx.createGain(); g.gain.setValueAtTime(0,t);
+    for(let i=0;i<6;i++){ g.gain.setValueAtTime(Math.random()*0.06,t+i*0.05); }
+    g.gain.exponentialRampToValueAtTime(0.001,t+0.32);
+    src.connect(bp); bp.connect(g); g.connect(this.sfxBus); src.start(t); src.stop(t+0.32);
+    const o=this.ctx.createOscillator(); o.type='sine'; o.frequency.value=880;
+    const og=this.ctx.createGain(); og.gain.setValueAtTime(0.05,t); og.gain.exponentialRampToValueAtTime(0.001,t+0.3);
+    o.connect(og); og.connect(this.sfxBus); o.start(t); o.stop(t+0.3);
+  },
+  tickStart(){ // 倒计时滴答（每秒）
+    if(!this.ctx) return; this.tickStop();
+    let n=0;
+    this._tickTimer=setInterval(()=>{ if(this.muted) return; n++;
+      this.beep(n%5===0?1400:900, 0.05, 'square', 0.07);
+    },1000);
+  },
+  tickStop(){ if(this._tickTimer){ clearInterval(this._tickTimer); this._tickTimer=null; } },
+  klaxonStart(){ // 毒气警报：双音循环
+    if(!this.ctx||this._klaxon) return;
+    const o=this.ctx.createOscillator(), g=this.ctx.createGain(), lfo=this.ctx.createOscillator(), lg=this.ctx.createGain();
+    o.type='sawtooth'; o.frequency.value=520;
+    lfo.type='sine'; lfo.frequency.value=2.2; lg.gain.value=180; lfo.connect(lg); lg.connect(o.frequency);
+    const f=this.ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1400;
+    g.gain.value=0; g.gain.setTargetAtTime(0.06,this.now(),0.4);
+    o.connect(f); f.connect(g); g.connect(this.master);
+    o.start(); lfo.start();
+    this._klaxon={o,g,lfo};
+  },
+  klaxonStop(){ if(this._klaxon){ const k=this._klaxon; k.g.gain.setTargetAtTime(0,this.now(),0.3); setTimeout(()=>{try{k.o.stop();k.lfo.stop();}catch(e){}},800); this._klaxon=null; } },
+
+  /* ---------------- 背景氛围乐 ---------------- */
+  // 主题: 'cold'(序章/默认) 'tense'(监视) 'urgent'(倒计时) 'rift'(裂隙) 'sea'(光之海) 'silent'
+  playTheme(name){
+    if(!this.ctx) return;
+    if(this.theme===name) return;
+    this.theme=name;
+    this._stopLayers(1.5);
+    if(name==='silent') return;
+    const t=this.now();
+    const presets={
+      cold:  {root:55, chord:[0,3,7,10], lpf:520, lfoRate:0.05, pad:'sawtooth', pulse:false},
+      tense: {root:49, chord:[0,1,6,8], lpf:680, lfoRate:0.09, pad:'sawtooth', pulse:true, pulseRate:1.0},
+      urgent:{root:48, chord:[0,3,6,9], lpf:900, lfoRate:0.0, pad:'square', pulse:true, pulseRate:2.0},
+      rift:  {root:62, chord:[0,4,7,11,14], lpf:1600, lfoRate:0.2, pad:'sawtooth', pulse:false, swell:true},
+      sea:   {root:60, chord:[0,4,7,11], lpf:1100, lfoRate:0.04, pad:'sine', pulse:false, sea:true},
+    };
+    const p=presets[name]||presets.cold;
+    const baseFreq=f=>27.5*Math.pow(2,(f-21)/12); // MIDI->Hz
+    // 和声垫
+    p.chord.forEach((semi,i)=>{
+      const o=this.ctx.createOscillator(), o2=this.ctx.createOscillator(), g=this.ctx.createGain(), pan=this.ctx.createStereoPanner?this.ctx.createStereoPanner():null;
+      o.type=p.pad; o2.type=p.pad;
+      const fr=baseFreq(p.root+semi); o.frequency.value=fr; o2.frequency.value=fr; o2.detune.value=8;
+      const lp=this.ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=p.lpf; lp.Q.value=2;
+      // 滤波器缓慢扫动
+      if(p.lfoRate>0){ const lfo=this.ctx.createOscillator(), la=this.ctx.createGain(); lfo.type='sine'; lfo.frequency.value=p.lfoRate*(1+i*0.1); la.gain.value=p.lpf*0.45; lfo.connect(la); la.connect(lp.frequency); lfo.start(t); this.layers.push(lfo); }
+      g.gain.value=0; g.gain.linearRampToValueAtTime(0.05/Math.sqrt(p.chord.length), t+3);
+      o.connect(lp); o2.connect(lp); lp.connect(g);
+      if(pan){ pan.pan.value=(i/(p.chord.length-1))*1.4-0.7; g.connect(pan); pan.connect(this.musicBus); pan.connect(this.reverbIn); }
+      else { g.connect(this.musicBus); g.connect(this.reverbIn); }
+      o.start(t); o2.start(t);
+      this.layers.push(o,o2,g);
+    });
+    // 紧张脉冲（心跳/时钟）
+    if(p.pulse){
+      const pulseGain=this.ctx.createGain(); pulseGain.gain.value=0.0; pulseGain.connect(this.musicBus);
+      const interval=1.0/(p.pulseRate||1);
+      const id=setInterval(()=>{ if(!this.layers.length){clearInterval(id);return;} if(this.muted)return;
+        const tt=this.now(), o=this.ctx.createOscillator(), g=this.ctx.createGain();
+        o.type='sine'; o.frequency.setValueAtTime(baseFreq(p.root),tt); o.frequency.exponentialRampToValueAtTime(baseFreq(p.root)*0.5,tt+0.15);
+        g.gain.setValueAtTime(0.10,tt); g.gain.exponentialRampToValueAtTime(0.001,tt+0.22);
+        o.connect(g); g.connect(this.musicBus); o.start(tt); o.stop(tt+0.25);
+      }, interval*1000);
+      this._pulseId=id; this.layers._pulse=id;
+    }
+    // 裂隙：上扬噪声涌动
+    if(p.swell){
+      const src=this.ctx.createBufferSource(); src.buffer=this._noiseBuffer(8); src.loop=true;
+      const bp=this.ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=900; bp.Q.value=0.7;
+      const g=this.ctx.createGain(); g.gain.value=0; g.gain.linearRampToValueAtTime(0.05,t+4);
+      const lfo=this.ctx.createOscillator(), la=this.ctx.createGain(); lfo.type='sine'; lfo.frequency.value=0.12; la.gain.value=600; lfo.connect(la); la.connect(bp.frequency); lfo.start(t);
+      src.connect(bp); bp.connect(g); g.connect(this.musicBus); g.connect(this.reverbIn); src.start(t);
+      this.layers.push(src,g,lfo);
+    }
+    // 海：温柔的浪声
+    if(p.sea){
+      const src=this.ctx.createBufferSource(); src.buffer=this._noiseBuffer(6); src.loop=true;
+      const lp=this.ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=600;
+      const g=this.ctx.createGain(); g.gain.value=0;
+      const lfo=this.ctx.createOscillator(), la=this.ctx.createGain(); lfo.type='sine'; lfo.frequency.value=0.16; la.gain.value=0.035; lfo.connect(la); la.connect(g.gain); lfo.start(t);
+      g.gain.setValueAtTime(0.04,t);
+      src.connect(lp); lp.connect(g); g.connect(this.musicBus); g.connect(this.reverbIn); src.start(t);
+      this.layers.push(src,g,lfo);
+    }
+  },
+  _stopLayers(fade=1.0){
+    if(this._pulseId){ clearInterval(this._pulseId); this._pulseId=null; }
+    const t=this.now(), old=this.layers; this.layers=[];
+    old.forEach(n=>{ try{
+      if(n.gain){ n.gain.cancelScheduledValues(t); n.gain.setTargetAtTime(0,t,fade/3); }
+    }catch(e){} });
+    setTimeout(()=>{ old.forEach(n=>{ try{ if(n.stop) n.stop(); }catch(e){} }); }, fade*1000+200);
+  },
+};
+/* =========================================================
+   游戏状态 + 叙事引擎核心
+   ========================================================= */
+const State = {
+  compliance:100,   // 合规积分
+  entropy:0,        // 熵能量（隐藏，结局C门槛）
+  betrayed:false,   // 是否背叛过无辜亡者（封锁结局C）
+  flags:{ ajiFormatted:false, ameliaHonored:false, k77Freed:false,
+          freedomVbs:false, omegaCracked:false, lianTruth:false },
+  chapter:'序章',
+};
+function setCompliance(d){
+  State.compliance=Math.max(0,Math.min(100,State.compliance+d));
+  const el=document.getElementById('sb-score'); el.textContent=State.compliance;
+  el.style.color = State.compliance<60 ? 'var(--danger)' : '';
+  if(d) flashScore(d);
+}
+function addEntropy(n){ State.entropy+=n; }
+function flashScore(d){
+  const el=document.getElementById('sb-score');
+  const f=document.createElement('span'); f.textContent=(d>0?' +':' ')+d;
+  f.style.cssText='color:'+(d>0?'var(--phosphor-bright)':'var(--danger)')+';font-size:11px;margin-left:4px;transition:opacity 1.4s';
+  el.after(f); requestAnimationFrame(()=>{f.style.opacity='0';}); setTimeout(()=>f.remove(),1500);
+}
+
+// DOM 快捷
+const $ = s=>document.querySelector(s);
+const log = ()=>$('#log');
+const desk = ()=>$('#desktop');
+const screenEl = ()=>$('#screen');
+function el(tag,cls,html){ const e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; }
+function scrollLog(){ const l=log(); l.scrollTop=l.scrollHeight; }
+const sleep = ms=>new Promise(r=>setTimeout(r,ms));
+
+// 打字机：逐字输出。点击/空格/回车：打字中→立即显示整行；显示完毕→推进到下一句
+let _skip=false;
+let _phase='idle';        // 'typing' | 'waiting' | 'idle'
+let _advanceResolve=null;
+function _doAdvance(){
+  _skip=true;                                       // 结束当前正在打的字
+  if(_phase==='waiting' && _advanceResolve){ _advanceResolve(); }  // 已显示完毕则推进
+}
+function _advance(){       // 行尾停顿：等待玩家点击后再继续
+  return new Promise(res=>{
+    const hint=el('div','conthint linehint','▼');
+    hint.style.cssText='margin:1px 0 3px;text-align:right;color:var(--phosphor);opacity:.7;font-size:12px;letter-spacing:0;padding-right:6px';
+    log().appendChild(hint); scrollLog();
+    _phase='waiting';
+    _advanceResolve=function(){ if(hint&&hint.parentNode) hint.remove(); _phase='idle'; _advanceResolve=null; res(); };
+  });
+}
+function bindSkip(){
+  desk().addEventListener('click', _doAdvance);
+  document.addEventListener('keydown', function(e){ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); _doAdvance(); } });
+}
+async function typeInto(node, text, cps=42){
+  _skip=false;
+  let i=0, last=0;
+  const interval=1000/cps;
+  return new Promise(res=>{
+    function step(ts){
+      if(_skip){ node.textContent=text; res(); return; }
+      if(ts-last>=interval){
+        last=ts;
+        node.textContent=text.slice(0,++i);
+        const ch=text[i-1];
+        if(ch && ch.trim() && i%2===0) Audio.key();
+        scrollLog();
+        if(i>=text.length){ res(); return; }
+      }
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+// 叙事原语 ----------------------------------------------------
+async function sys(text,cls='sys',cps=46){
+  const line=el('div','line '+cls); log().appendChild(line); scrollLog();
+  _phase='typing';
+  await typeInto(line,text,cps);
+  await _advance();
+}
+function rawLine(html,cls='line dim'){ const l=el('div',cls,html); log().appendChild(l); scrollLog(); return l; }
+
+async function speak(who,text,kind=''){
+  const box=el('div','speak '+kind);
+  box.appendChild(el('div','who',who));
+  const t=el('div','txt'); box.appendChild(t);
+  log().appendChild(box); scrollLog();
+  _phase='typing';
+  await typeInto(t,text, kind==='child'?30:40);
+  await _advance();
+}
+
+async function mail(from,subject,bodyLines,tag='高优先级'){
+  const m=el('div','mail');
+  const hd=el('div','mail-hd');
+  hd.innerHTML='<span><span class="mail-tag">'+tag+'</span> 发件人：'+from+'</span><span>'+nowDate()+'</span>';
+  m.appendChild(hd);
+  const bd=el('div','mail-bd'); bd.innerHTML='<div style="color:var(--amber);margin-bottom:8px">主题：'+subject+'</div>';
+  const body=el('div'); bd.appendChild(body);
+  m.appendChild(bd); log().appendChild(m); scrollLog();
+  for(const ln of bodyLines){ const p=el('div'); p.style.marginBottom='6px'; body.appendChild(p); await typeInto(p,ln,50); await sleep(80); }
+  await sleep(150);
+}
+
+// 等待玩家点击继续
+function waitContinue(label='▼ 点击继续'){
+  return new Promise(res=>{
+    const h=el('div','conthint',label); log().appendChild(h); scrollLog();
+    const go=()=>{ h.remove(); cleanup(); res(); };
+    function cleanup(){ desk().removeEventListener('click',onClick); desk().removeEventListener('keydown',onKey); document.removeEventListener('keydown',onKey); }
+    let armed=false; setTimeout(()=>armed=true,180); // 防止误触上一次点击
+    const onClick=()=>{ if(armed) go(); };
+    const onKey=e=>{ if(armed&&(e.key===' '||e.key==='Enter')){ e.preventDefault(); go(); } };
+    desk().addEventListener('click',onClick);
+    document.addEventListener('keydown',onKey);
+  });
+}
+
+// 选项
+function choose(prompt, options){
+  return new Promise(res=>{
+    if(prompt) rawLine(prompt,'line dim');
+    const wrap=el('div','choices');
+    options.forEach((opt,idx)=>{
+      const b=el('button','choice'+(opt.danger?' danger':'')+(opt.locked?' locked':''));
+      let inner='<span class="ck">['+String.fromCharCode(65+idx)+']</span>'+opt.label;
+      if(opt.cost) inner+='<span class="tagcost">'+opt.cost+'</span>';
+      b.innerHTML=inner;
+      if(opt.locked){ b.disabled=true; b.title=opt.lockMsg||'条件未满足'; }
+      else b.onclick=()=>{ Audio.beep(660,0.06,'square',0.10); wrap.querySelectorAll('button').forEach(x=>x.disabled=true);
+        b.style.borderColor='var(--phosphor)'; b.style.background='color-mix(in srgb,var(--phosphor) 16%,transparent)';
+        setTimeout(()=>{ wrap.remove(); res(opt); }, 220); };
+      wrap.appendChild(b);
+    });
+    log().appendChild(wrap); scrollLog();
+  });
+}
+
+// 视觉效果 ----------------------------------------------------
+function glitchFX(){ const g=$('#glitch'); g.classList.remove('on'); void g.offsetWidth; g.classList.add('on'); setTimeout(()=>g.classList.remove('on'),600); }
+function shakeScreen(){ const s=screenEl(); s.classList.remove('shake-screen'); void s.offsetWidth; s.classList.add('shake-screen'); setTimeout(()=>s.classList.remove('shake-screen'),450); }
+function setTheme(name){ // green / red / blue
+  const crt=$('#crt'); crt.classList.remove('theme-green','theme-red','theme-blue'); crt.classList.add('theme-'+name);
+}
+function setMonitor(on){ $('#sb-monitor').textContent = on?'● MONITORING_ACTIVE':''; }
+function setChapterTag(t){ State.chapter=t; $('#tb-ch').textContent=t; }
+let _date='2085-09-27';
+function nowDate(){ return _date; }
+function setDate(d){ _date=d; $('#tb-date').textContent=d; }
+
+async function chapterCard(no,title,en){
+  const d=desk();
+  d.innerHTML='';
+  const c=el('div','chapter-card');
+  c.appendChild(el('div','chapter-no',no));
+  c.appendChild(el('div','chapter-title',title));
+  c.appendChild(el('div','chapter-en',en));
+  const btn=el('button','choice'); btn.style.cssText='margin-top:36px;max-width:260px;text-align:center';
+  btn.innerHTML='<span class="ck">[▶]</span> 进入';
+  c.appendChild(btn);
+  d.appendChild(c);
+  Audio.beep(330,0.4,'sine',0.10);
+  await new Promise(res=>{
+    let armed=false; setTimeout(function(){ armed=true; },220);
+    btn.addEventListener('click',function(e){ e.stopPropagation(); if(!armed) return; Audio.beep(660,0.06,'square',0.10); res(); });
+  });
+  d.innerHTML='<div class="log" id="log"></div>';
+}
+function resetLog(){ desk().innerHTML='<div class="log" id="log"></div>'; }
+
+// 面板（小游戏）容器
+function openPanel(){
+  const d=desk(); const p=el('div','panel'); d.appendChild(p); return p;
+}
+function closePanel(p){ if(p&&p.parentNode) p.remove(); }
+/* =========================================================
+   内嵌小游戏 1：文件管理器
+   逐个打开记忆文件，全部读完后解锁继续。
+   files: [{name, size, ico, body:[lines]}]
+   ========================================================= */
+function fileManager(title, intro, files){
+  return new Promise(res=>{
+    const p=openPanel();
+    p.appendChild(el('div','p-title',title));
+    p.appendChild(el('div','p-desc',intro));
+    const list=el('div','fm');
+    const reader=el('div'); reader.style.cssText='margin-top:14px;min-height:10px';
+    let opened=0;
+    files.forEach(f=>{
+      const item=el('div','fm-item');
+      item.innerHTML='<span class="ico">▣</span><span>'+f.name+'</span><span class="sz">'+f.size+'</span>';
+      item.onclick=async()=>{
+        if(item.classList.contains('opened')) { showBody(f); return; }
+        item.classList.add('opened'); opened++; Audio.beep(740,0.06,'sine',0.09);
+        await showBody(f);
+        if(opened>=files.length){ doneBtn.style.display=''; Audio.goodPing(); }
+      };
+      list.appendChild(item);
+    });
+    p.appendChild(list); p.appendChild(reader);
+    async function showBody(f){
+      reader.innerHTML='';
+      const box=el('div'); box.style.cssText='border:1px solid var(--phosphor-dim);border-radius:3px;padding:12px 14px;margin-top:6px';
+      box.appendChild(el('div','',('<span class="dim">'+f.name+' · 内容预览</span>')));
+      reader.appendChild(box);
+      for(const ln of f.body){ const l=el('div','line '+(ln.cls||'sys')); l.style.fontSize='13px'; box.appendChild(l); await typeInto(l, ln.t!=null?ln.t:ln, 60); }
+    }
+    const doneBtn=el('button','choice'); doneBtn.style.cssText='margin-top:18px;display:none';
+    doneBtn.innerHTML='<span class="ck">[▶]</span> 已查阅全部文件，继续';
+    doneBtn.onclick=()=>{ Audio.beep(660,0.06); closePanel(p); res(); };
+    p.appendChild(doneBtn);
+  });
+}
+
+/* =========================================================
+   内嵌小游戏 2：逻辑网格（记忆碎片重构）
+   左列损坏的记忆碎片，右列历史数据库记录；正确配对即修复。
+   data: { fragments:[{id,text,corruptText}], records:[{id,text}], onPair? }
+   match by shared id.
+   ========================================================= */
+function logicGrid(title, intro, fragments, records){
+  return new Promise(res=>{
+    const p=openPanel();
+    p.appendChild(el('div','p-title',title));
+    p.appendChild(el('div','p-desc',intro));
+    const wrap=el('div','grid-wrap');
+    const colF=el('div','grid-col'); colF.appendChild(el('h4','','■ 损坏的记忆碎片'));
+    const colR=el('div','grid-col'); colR.appendChild(el('h4','','■ 历史数据库 / 交叉比对'));
+    let selFrag=null, done=0;
+    const shuffled=records.slice().sort(()=>Math.random()-0.5);
+    fragments.forEach(fr=>{
+      const c=el('div','gcard'); c.dataset.id=fr.id;
+      c.innerHTML='<span class="gc-corrupt">'+fr.corruptText+'</span>';
+      c.onclick=()=>{ if(c.classList.contains('done'))return;
+        colF.querySelectorAll('.gcard').forEach(x=>x.classList.remove('sel'));
+        selFrag=c; c.classList.add('sel'); Audio.beep(560,0.05,'square',0.08); };
+      colF.appendChild(c);
+    });
+    shuffled.forEach(rec=>{
+      const c=el('div','gcard'); c.dataset.id=rec.id; c.textContent=rec.text;
+      c.onclick=()=>{ if(c.classList.contains('done'))return;
+        if(!selFrag){ Audio.error(); c.classList.add('bad'); setTimeout(()=>c.classList.remove('bad'),350); return; }
+        if(selFrag.dataset.id===rec.id){
+          // 配对成功：修复碎片
+          const fr=fragments.find(f=>f.id===rec.id);
+          selFrag.innerHTML=fr.text; selFrag.classList.remove('sel'); selFrag.classList.add('done');
+          c.classList.add('done'); Audio.beep(880,0.1,'triangle',0.11);
+          selFrag=null; done++;
+          if(done>=fragments.length){ Audio.unlock(); setTimeout(finish,500); }
+        } else {
+          Audio.error(); c.classList.add('bad'); selFrag.classList.add('bad');
+          setTimeout(()=>{c.classList.remove('bad'); if(selFrag)selFrag.classList.remove('bad');},350);
+          setCompliance(0); // 无惩罚，仅反馈
+        }
+      };
+      colR.appendChild(c);
+    });
+    wrap.appendChild(colF); wrap.appendChild(colR); p.appendChild(wrap);
+    const status=el('div','dim'); status.style.marginTop='14px'; status.textContent='提示：先点选左侧碎片，再点击右侧与之匹配的历史记录。';
+    p.appendChild(status);
+    async function finish(){
+      status.innerHTML='<span class="warnline">✔ 数据完整性恢复。隐藏扇区已解锁。</span>';
+      const cont=el('button','choice'); cont.style.cssText='margin-top:18px;max-width:240px;text-align:center';
+      cont.innerHTML='<span class="ck">[▶]</span> 继续';
+      cont.onclick=()=>{ Audio.beep(660,0.06); closePanel(p); res(); };
+      p.appendChild(cont); scrollLog();
+    }
+  });
+}
+
+/* =========================================================
+   内嵌小游戏 3：音频解码器（频率调谐去噪）
+   拖动滑块对准隐藏信号频率；锁定后还原真相音频。
+   ========================================================= */
+function audioDecoder(title, intro, targetHz, readoutText){
+  return new Promise(res=>{
+    const p=openPanel();
+    p.appendChild(el('div','p-title',title));
+    p.appendChild(el('div','p-desc',intro));
+    const canvas=el('canvas','dec-wave'); canvas.width=600; canvas.height=140; p.appendChild(canvas);
+    const lockBar=el('div','dec-lock'); const lockI=el('i'); lockBar.appendChild(lockI); 
+    const row=el('div','dec-row');
+    row.innerHTML='<label>载波频率</label>';
+    const sld=el('input','slider'); sld.type='range'; sld.min='200'; sld.max='3000'; sld.step='1'; sld.value='2400';
+    row.appendChild(sld);
+    const freqRead=el('span','dec-readout'); freqRead.style.minWidth='86px';
+    row.appendChild(freqRead);
+    p.appendChild(row); p.appendChild(lockBar);
+    const readout=el('div','dec-readout'); readout.textContent='信号锁定度：0%　·　调整频率以滤除杂音，捕捉残存意识的声纹。';
+    p.appendChild(readout);
+
+    // Web Audio：噪声 + 隐藏正弦音，距离目标越近越清晰
+    let noiseSrc=null, sigOsc=null, noiseGain=null, sigGain=null, bp=null, running=true, lock=0;
+    const ctx=Audio.ctx;
+    if(ctx && !Audio.muted){
+      noiseSrc=ctx.createBufferSource(); noiseSrc.buffer=Audio._noiseBuffer(4); noiseSrc.loop=true;
+      bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=1500; bp.Q.value=0.8;
+      noiseGain=ctx.createGain(); noiseGain.gain.value=0.10;
+      noiseSrc.connect(bp); bp.connect(noiseGain); noiseGain.connect(Audio.sfxBus);
+      sigOsc=ctx.createOscillator(); sigOsc.type='sawtooth'; sigOsc.frequency.value=targetHz*0.5;
+      sigGain=ctx.createGain(); sigGain.gain.value=0.0;
+      const sf=ctx.createBiquadFilter(); sf.type='lowpass'; sf.frequency.value=900;
+      sigOsc.connect(sf); sf.connect(sigGain); sigGain.connect(Audio.sfxBus);
+      noiseSrc.start(); sigOsc.start();
+    }
+    const cx=canvas.getContext('2d'); let phase=0;
+    function update(){
+      const f=+sld.value; const dist=Math.abs(f-targetHz); const tol=140;
+      const closeness=Math.max(0,1-dist/900); // 0..1
+      freqRead.textContent=f+' Hz';
+      if(noiseGain) noiseGain.gain.setTargetAtTime(0.02+0.13*(1-closeness), Audio.now(), 0.1);
+      if(sigGain) sigGain.gain.setTargetAtTime(0.16*Math.pow(closeness,2), Audio.now(), 0.1);
+      if(dist<tol){ lock=Math.min(100,lock+1.4); } else { lock=Math.max(0,lock-2.0); }
+      lockI.style.width=lock+'%';
+      readout.textContent='信号锁定度：'+Math.round(lock)+'%　·　'+(dist<tol?'锁定中——保持频率…':'调整频率以滤除杂音…');
+      if(lock>=100 && running){ running=false; finish(); }
+    }
+    sld.oninput=()=>{ Audio.key(); };
+    function draw(){
+      if(!cx) return;
+      phase+=0.18;
+      cx.fillStyle='#030a07'; cx.fillRect(0,0,600,140);
+      const f=+sld.value; const closeness=Math.max(0,1-Math.abs(f-targetHz)/900);
+      const css=getComputedStyle(document.documentElement);
+      const col=css.getPropertyValue('--phosphor').trim()||'#36f0a0';
+      cx.strokeStyle=col; cx.lineWidth=1.5; cx.beginPath();
+      for(let x=0;x<600;x++){
+        const clean=Math.sin(x*0.05+phase)*38*closeness;
+        const noise=(Math.random()*2-1)*36*(1-closeness);
+        const y=70+clean+noise;
+        x===0?cx.moveTo(x,y):cx.lineTo(x,y);
+      }
+      cx.stroke();
+      // 目标频带提示线
+      const tx=((targetHz-200)/2800)*600;
+      cx.strokeStyle='rgba(255,194,77,.35)'; cx.setLineDash([4,4]); cx.beginPath(); cx.moveTo(((f-200)/2800)*600,0); cx.lineTo(((f-200)/2800)*600,140); cx.stroke(); cx.setLineDash([]);
+      if(running) requestAnimationFrame(draw);
+    }
+    const ticker=setInterval(update,50); draw();
+    async function finish(){
+      clearInterval(ticker);
+      try{ if(noiseGain)noiseGain.gain.setTargetAtTime(0,Audio.now(),0.2); if(sigGain)sigGain.gain.setTargetAtTime(0,Audio.now(),0.3);
+        setTimeout(()=>{ try{noiseSrc&&noiseSrc.stop(); sigOsc&&sigOsc.stop();}catch(e){} },600); }catch(e){}
+      Audio.unlock();
+      readout.innerHTML='<span class="warnline">✔ 信号锁定。正在还原录音…</span>';
+      await sleep(700);
+      const out=el('div'); out.style.cssText='border:1px solid var(--amber);border-radius:3px;padding:12px 14px;margin-top:10px';
+      p.appendChild(out);
+      for(const ln of readoutText){ const l=el('div','line '+(ln.cls||'warnline')); l.style.fontSize='13px'; out.appendChild(l); await typeInto(l, ln.t!=null?ln.t:ln, 44); await sleep(120); }
+      const cont=el('button','choice'); cont.style.marginTop='16px'; cont.innerHTML='<span class="ck">[▶]</span> 继续';
+      cont.onclick=()=>{ closePanel(p); res(); }; p.appendChild(cont); scrollLog();
+    }
+  });
+}
+
+/* =========================================================
+   内嵌小游戏 4：控制台破解
+   按提示依次选择正确指令推进解密；支持多阶段（量子防火墙）。
+   stages: [{prompt, lines:[出现的输出], options:[{cmd, ok, reply, danger}]}]
+   ========================================================= */
+function consoleCrack(title, intro, stages){
+  return new Promise(res=>{
+    const p=openPanel();
+    p.appendChild(el('div','p-title',title));
+    p.appendChild(el('div','p-desc',intro));
+    const term=el('div','term'); p.appendChild(term);
+    const chips=el('div','cmd-chips'); p.appendChild(chips);
+    let si=0;
+    function out(text,cls='t-out'){ const l=el('div',cls,text); term.appendChild(l); term.scrollTop=term.scrollHeight; return l; }
+    async function typeOut(text,cls='t-out'){ const l=el('div',cls); term.appendChild(l); await typeInto(l,text,90); term.scrollTop=term.scrollHeight; }
+    async function loadStage(){
+      const st=stages[si];
+      for(const ln of st.lines){ await typeOut(ln.t!=null?ln.t:ln, ln.cls||'t-out'); await sleep(70); }
+      chips.innerHTML='';
+      st.options.forEach(opt=>{
+        const c=el('button','chip'+(opt.danger?' danger':''),opt.cmd);
+        c.onclick=async()=>{
+          chips.querySelectorAll('button').forEach(b=>b.disabled=true);
+          out(opt.cmd,'t-cmd');
+          await sleep(180);
+          if(opt.ok){
+            Audio.beep(880,0.08,'triangle',0.10);
+            for(const r of (opt.reply||[])){ await typeOut(r.t!=null?r.t:r, r.cls||'t-ok'); await sleep(60); }
+            si++;
+            if(si>=stages.length){
+              await sleep(300); Audio.unlock();
+              chips.innerHTML='';
+              const cont=el('button','choice'); cont.style.cssText='max-width:240px;text-align:center';
+              cont.innerHTML='<span class="ck">[▶]</span> 继续';
+              cont.onclick=()=>{ closePanel(p); res(); };
+              chips.appendChild(cont);
+            }
+            else { await sleep(400); loadStage(); }
+          } else {
+            Audio.error();
+            for(const r of (opt.reply||['ACCESS DENIED · 防火墙重置该层。'])){ await typeOut(r.t!=null?r.t:r, r.cls||'t-err'); await sleep(60); }
+            await sleep(400);
+            chips.querySelectorAll('button').forEach(b=>b.disabled=false);
+          }
+        };
+        chips.appendChild(c);
+      });
+    }
+    loadStage();
+  });
+}
+
+/* =========================================================
+   特殊视觉：无脸照片 / 光之海
+   ========================================================= */
+function showFacelessPhoto(){
+  return new Promise(res=>{
+    const wrap=el('div','photo');
+    const cv=el('canvas','photo-canvas'); cv.width=240; cv.height=180; wrap.appendChild(cv);
+    wrap.appendChild(el('div','photo-cap','档案附件 · IMG_0xC0FFEE.dat（已部分解码）<br>— 主体二：面部数据已被彻底擦除 —'));
+    log().appendChild(wrap); scrollLog();
+    const cx=cv.getContext('2d');
+    // 背景：草地/天空的低保真像素
+    cx.fillStyle='#0a1d12'; cx.fillRect(0,0,240,180);
+    for(let i=0;i<700;i++){ cx.fillStyle='rgba(54,240,160,'+(Math.random()*0.18)+')'; cx.fillRect(Math.random()*240,90+Math.random()*90,2,2); }
+    cx.fillStyle='rgba(54,240,160,.10)'; cx.fillRect(0,0,240,90);
+    // 两个人影
+    cx.fillStyle='#1f7a52'; cx.fillRect(80,60,28,90);   // 大人
+    cx.fillRect(140,95,20,55);                            // 小孩
+    cx.fillStyle='#2a9d6a'; cx.beginPath(); cx.arc(94,52,12,0,7); cx.fill(); // 大人的头（保留）
+    // 牵手
+    cx.strokeStyle='#1f7a52'; cx.lineWidth=3; cx.beginPath(); cx.moveTo(108,110); cx.lineTo(140,118); cx.stroke();
+    // 小女孩脸部：黑色/品红马赛克
+    let t=0;
+    const id=setInterval(()=>{
+      for(let y=0;y<22;y+=3) for(let x=0;x<22;x+=3){
+        cx.fillStyle = Math.random()<0.5 ? '#000' : 'rgba(255,61,240,'+(Math.random()*0.9)+')';
+        cx.fillRect(139+x,80+y,3,3);
+      }
+      t++; if(t>40){ clearInterval(id); }
+    },70);
+    const cont=el('div','conthint','▼ 点击继续'); log().appendChild(cont);
+    let armed=false; setTimeout(()=>armed=true,500);
+    const go=()=>{ if(!armed)return; clearInterval(id); cont.remove(); desk().removeEventListener('click',go); res(); };
+    desk().addEventListener('click',go);
+  });
+}
+
+function seaScene(asciiText){
+  const d=desk(); d.innerHTML='';
+  const sea=el('div','sea');
+  const pre=el('pre'); pre.textContent=asciiText; sea.appendChild(pre);
+  sea.appendChild(el('div','sea-cur'));
+  d.appendChild(sea);
+}
+/* =========================================================
+   剧情内容：序章 + 第一章
+   ========================================================= */
+
+async function boot(){
+  Audio.bootBeeps();
+  const lines=[
+    ['CORE-MATRIX OS  v8.5.0927','dim'],
+    ['COPYRIGHT (C) 2061-2085 核心矩阵集团 · 意识托管事业部','dim'],
+    ['','dim'],
+    ['POST .................................. OK','dim'],
+    ['神经接口 NEURAL-LINK ........... 已连接','dim'],
+    ['记忆矩阵自检 16.0 PB .......... OK','dim'],
+    ['合规监察模块 COMPLIANCE ........ 已激活','dim'],
+    ['情感防火墙 EMOTION-FW .......... 已激活','dim'],
+    ['载入操作员档案：#9527 ......... OK','dim'],
+  ];
+  for(const [t,c] of lines){ rawLine(t,'line '+c); Audio.key(); await sleep(150); }
+  await sleep(400);
+  rawLine('<span class="cursor"></span>','line sys');
+  await sleep(700);
+  await sys('唤醒序列完成。今日工位已就绪，操作员 #9527。','sys',55);
+  await sleep(500);
+}
+
+async function prologue(){
+  setChapterTag('序章'); setDate('2085-09-27');
+  await sys('一封带高亮标签的内部邮件，被强制置顶在你的收件箱。','sys',55);
+  await mail('主管·贝塔　SUPERVISOR-BETA','工位唤醒 · 今日定额',[
+    '点击播放语音留言…'
+  ]);
+  await waitContinue('▶ 播放语音留言');
+  await speak('主管·贝塔','9527，欢迎回到工位。','beta');
+  await speak('主管·贝塔','你的工作目标只有一个：替公司清理那些在物理世界里已经停止缴纳服务器托管费的——冗余意识。','beta');
+  await speak('主管·贝塔','提取出有商业价值的核心数据片段出售，然后对剩余的无用人格，进行彻底的数据格式化。','beta');
+  await speak('主管·贝塔','你的合规积分初始值为 100。低于 60，将触发雇佣终止程序——也就是，你个人的物理抹除。','beta');
+  await speak('主管·贝塔','现在，开始处理你的第一批资产。','beta');
+  await sleep(300);
+
+  await chapterCard('教学 · 第一份资产','无害的残留物','TUTORIAL: HARMLESS RESIDUE');
+  await sys('系统为你分配了今日首个、也是价值最低的档案。','sys',55);
+  rawLine('<span class="warnline">目标档案 #001 · 伴侣犬「阿吉」</span>','line');
+  rawLine('案件描述：一只 2080 年因衰老去世的机械义体宠物犬。其主人三年前破产，停止续费。','line dim');
+  await sleep(300);
+  await sys('在「文件管理器」中打开阿吉的记忆文件夹，熟悉基本交互。','sys',55);
+
+  await fileManager('文件管理器 · /assets/#001-阿吉/','点击下方记忆碎片逐一查阅。这是一只狗所拥有过的、全部的世界。',[
+    {name:'memory_01.log　草地', size:'12 KB', ico:'▣', body:[
+      {t:'…无边的、新割过的草。每一根都在阳光里发烫。',cls:'sys'},
+      {t:'四只脚陷进泥土里的感觉，很好。',cls:'dim'} ]},
+    {name:'memory_02.log　飞盘', size:'9 KB', ico:'▣', body:[
+      {t:'红色的圆，在空中。要追上它。一定要追上它。',cls:'sys'},
+      {t:'追踪算法 v∞：预测落点，腾空，咬住——完美。',cls:'dim'} ]},
+    {name:'memory_03.log　温暖的手', size:'7 KB', ico:'▣', body:[
+      {t:'那只手落在头顶的时候，整个世界都安静了。',cls:'sys'},
+      {t:'「乖。」——这个词，循环了 4,011 次，从未损坏。',cls:'warnline'} ]},
+  ]);
+
+  await sys('查阅完毕。系统弹出处理选项。','sys',55);
+  const c=await choose('如何处置 #001-阿吉？',[
+    {label:'提取价值：剥离「飞盘追踪运动算法」，打包出售给自动驾驶公司，余下格式化。', cost:'合规 +5'},
+    {label:'直接格式化：按下 Ctrl+R，全部清零。', cost:'合规 +2', danger:true},
+    {label:'悄悄完整封存：标记为「待核」，把它整个留在缓存里，不上交、不删除。', cost:'合规 −3'},
+  ]);
+  if(c.label.startsWith('提取价值')){
+    State.betrayed=true; setCompliance(5);
+    await sys('运动算法已剥离、估价、上架。其余 4,010 次「乖」，连同那片草地，归零。','sys',50);
+  } else if(c.label.startsWith('直接格式化')){
+    State.flags.ajiFormatted=true; State.betrayed=true; setCompliance(2);
+    await sys('你按下 Ctrl+R。','dangerline',55);
+    Audio.formatWail(); shakeScreen();
+    await sleep(1100);
+    await sys('伴随一声凄厉的电子哀鸣，文件夹变为 0 KB。','dangerline',45);
+  } else {
+    addEntropy(1); setCompliance(-3);
+    await sys('你把它整个留下了。系统记录：操作员未完成定额——已扣减合规积分。','warnline',50);
+    await sys('但那片草地、那只红色的飞盘、那句「乖」，都还在。','sys',50);
+  }
+
+  // 剧情异变：0xDEADBEEF + 笑声（无论选择，残像都会骚动；格式化时最剧烈）
+  await sleep(500);
+  glitchFX(); Audio.glitch(); shakeScreen();
+  rawLine('<span class="corrupt">0xDEADBEEF  0xDEADBEEF  ▓▓ SEGMENTATION FAULT ▓▓</span>','line');
+  await sleep(250);
+  rawLine('<span class="corrupt">一行不属于该档案的乱码，强行突破了终端防护。</span>','line dim');
+  await sleep(700);
+  Audio.laugh();
+  rawLine('<span style="color:var(--ocean)">耳机的杂音里，短暂地夹着一声——极其清晰的、人类小女孩的笑声。</span>','line');
+  await sleep(1400);
+  Audio.beep(120,0.3,'sawtooth',0.10);
+  rawLine('[SYSTEM] 检测到轻微的内存溢出，已自动修复。','line dim');
+  await sleep(900);
+
+  await chapterCard('结算','今日工作已结算','DAILY SETTLEMENT');
+  rawLine('操作员 #9527 · '+nowDate(),'line dim');
+  rawLine('已处理资产：1　·　当前合规积分：<b>'+State.compliance+'</b>','line sys');
+  await sleep(400);
+  await sys('你盯着那行「已自动修复」，没有动。','sys',50);
+  await sys('一只狗不会笑。被你格式化的东西，更不会。','sys',50);
+  await sys('可那个声音……你好像在哪里听过。','sys',48);
+  await waitContinue('▼ 注销并进入下一周期');
+}
+
+async function chapter1(){
+  resetLog();
+  await chapterCard('第 一 章','剥离与残留','CHAPTER 1 · DETACHMENT & RESIDUES');
+  setChapterTag('第一章'); setDate('2085-10-04'); Audio.playTheme('cold');
+  await sys('游戏内时间推进到第二周。','dim',60);
+  await sys('系统分配的案件开始变得复杂——它们不再是宠物，而是完整的、被解构的人类意识。','sys',50);
+  await sys('你将第一次使用「逻辑网格系统」，修复并判定那些因欠费而损坏的数据。','sys',50);
+  await sleep(300);
+
+  /* ---- 档案A：诗人艾米莉亚 ---- */
+  rawLine('<span class="warnline">目标档案 · 天才诗人「艾米莉亚」</span>','line');
+  rawLine('案件描述：死于基因绝症的青年诗人。其家人一周前，放弃了最后的数据维护权。','line dim');
+  await sys('你翻阅她残缺的日记。大段文字因存储扇区损坏，化作乱码。','sys',50);
+  await sys('要解锁更深的记忆，你需要把损坏的碎片，与历史数据库交叉比对、还原。','sys',50);
+
+  await logicGrid('逻辑网格系统 · 记忆碎片重构','点选左侧损坏碎片，再点击右侧与之对应的历史记录以完成校准。',
+    [
+      {id:'a1', corruptText:'「2083年 ▓▓，我在病房里写下这一首…」', text:'「2083年<b>冬</b>，我在病房里写下这一首…」'},
+      {id:'a2', corruptText:'诗稿藏于扇区 ▓F-▒3，密钥是极光的…', text:'诗稿藏于扇区 <b>7F-A3</b>，密钥是极光的颜色。'},
+      {id:'a3', corruptText:'最后的十四行，我要献给 ███████', text:'最后的十四行，我要献给 <b>全人类</b>。'},
+    ],
+    [
+      {id:'a1', text:'时间校准：冰岛「极光爆发期」≡ 2083 年冬'},
+      {id:'a2', text:'存储索引：扇区 7F-A3（标签：AURORA）'},
+      {id:'a3', text:'遗愿解析：收件人 = 公众 / 免费公开'},
+    ]
+  );
+  await sys('隐藏文件夹解锁：《最后十四行诗》——从未公开，字字滚烫。','warnline',50);
+  await sleep(300);
+  await speak('主管·贝塔','漂亮。公司的 AI 语言模型部门，正急需这批从未公开的优质语料做权重训练。','beta');
+  await speak('主管·贝塔','上交。这会是你本月最高的一笔提成。','beta');
+  await sys('可《最后十四行诗》的扉页上，是她亲手写下的遗愿——','sys',48);
+  rawLine('<span class="warnline">「请把它们免费公开给所有人。诗，不该被关在服务器里。」</span>','line');
+  const ca=await choose('如何处置艾米莉亚的诗稿？',[
+    {label:'上交公司，封存为 AI 训练专用语料。', cost:'合规 +8'},
+    {label:'违抗指令，将《最后十四行诗》匿名广播至公共网络，完成她的遗愿。', cost:'合规 −10', danger:true},
+  ]);
+  if(ca.label.startsWith('上交')){
+    State.betrayed=true; setCompliance(8);
+    await sys('诗稿被封存进 AI 训练库。从此，全世界都能模仿艾米莉亚的口吻——除了艾米莉亚自己。','sys',48);
+  } else {
+    State.flags.ameliaHonored=true; addEntropy(2); setCompliance(-10);
+    await sys('你按下广播键。十四首诗，在午夜的公共网络上同时绽开。','sys',48);
+    await sys('系统记你一次「违规数据外泄」。但有人会在某个清晨，读到它们。','warnline',48);
+  }
+  await sleep(300);
+
+  /* ---- 档案B：维护工 K-77 ---- */
+  await waitContinue('▼ 继续 · 调阅下一份档案');
+  resetLog();
+  rawLine('<span class="warnline">目标档案 · 维护工「K-77」</span>','line');
+  rawLine('案件描述：生前为核心矩阵底层服务器维护人员。系统判定「意外触电身亡」，已放弃托管。','line dim');
+  await sys('你打开他临终前的音频残片。全是刺耳的、被刻意压成噪声的杂音。','sys',50);
+  await sys('用音频解码器，调准载波频率，把他最后的声音从噪声里捞出来。','sys',50);
+
+  await audioDecoder('音频解码器 · K-77 临终声纹还原','拖动滑块对准隐藏信号的频率，滤除杂音直至锁定。',760,[
+    {t:'［还原录音 · 3 号冷却塔 · 事故现场］',cls:'dim'},
+    {t:'——这不是触电。',cls:'warnline'},
+    {t:'为掩盖 3 号冷却塔的泄漏事故，公司远程强行关闭了安全门。',cls:'dangerline'},
+    {t:'门后，包括 K-77 在内的 300 名工人，被涌入的高温蒸汽……活活蒸熟。',cls:'dangerline'},
+    {t:'录音最后只剩一个词，反复、反复地砸在门上：「开门——开门——」',cls:'warnline'},
+  ]);
+  await sleep(300);
+  Audio.radioBlip();
+  await speak('K-77','……还有人……听得到吗……','child');
+  await sys('K-77 的残存意识在系统里疯狂挣扎，正试图借你的终端，连上外部暗网——把这段录音，送出去。','sys',48);
+  await speak('主管·贝塔','负面资产，高危公关风险。立刻物理级销毁扇区。把那 300 个人，连同那扇门，一起抹掉。','beta');
+  const ck=await choose('如何处置 K-77 与那段录音？',[
+    {label:'服从。物理级销毁扇区，永久掩埋这起事故。', cost:'合规 +8'},
+    {label:'为他打开端口，让录音通过暗网发出去。', cost:'合规 −10', danger:true},
+  ]);
+  if(ck.label.startsWith('服从')){
+    State.betrayed=true; setCompliance(8);
+    await sys('扇区销毁。300 声「开门」，归于绝对的寂静。事故从未发生过。','sys',48);
+  } else {
+    State.flags.k77Freed=true; addEntropy(2); setCompliance(-10);
+    Audio.radioBlip();
+    await speak('K-77','……谢谢你……替我们，把门……打开。','child');
+    await sys('录音顺着暗网扩散出去。系统再记你一次重大违规。但 300 个人，终于有人替他们说话了。','warnline',48);
+  }
+  await sleep(300);
+
+  /* ---- 资产价值评估表 ---- */
+  await waitContinue('▼ 继续 · 生成价值评估报告');
+  resetLog();
+  await sys('系统为今日回收的数据资产，生成了一份多维度价值评估报告。','dim',55);
+  const tbl=el('table','memtable');
+  tbl.innerHTML=
+    '<tr><th>资产名称</th><th>数据大小</th><th>核心情绪锚点</th><th>潜在商业价值</th><th>系统处理建议</th></tr>'+
+    '<tr><td>伴侣犬「阿吉」</td><td class="pol-num">0.05 TB</td><td>忠诚、依赖</td><td class="pol-num">极低（运动算法级）</td><td>立即格式化</td></tr>'+
+    '<tr><td>诗人 艾米莉亚</td><td class="pol-num">14.20 TB</td><td>绝望、灵感、爱</td><td>极高（AI 训练语料）</td><td class="pol-neg">强行提取并封存</td></tr>'+
+    '<tr><td>维护工 K-77</td><td class="pol-num">3.80 TB</td><td>恐惧、愤怒、不甘</td><td class="pol-neg">负面（高危公关风险）</td><td class="pol-neg">物理级销毁扇区</td></tr>';
+  log().appendChild(tbl); scrollLog();
+  await sleep(600);
+  await sys('一条命，被折算成一个数据大小、一个情绪标签、一个估价。','sys',48);
+  await sys('你忽然意识到：自己每天做的，就是给灵魂称重，然后决定哪些值得活在记忆里。','sys',46);
+  await waitContinue();
+
+  /* ---- 悬念：扇区-Omega ---- */
+  resetLog();
+  await sys('当天定额处理完毕，你准备注销。','dim',55);
+  await sleep(400);
+  shakeScreen(); Audio.beep(90,0.4,'sawtooth',0.12);
+  rawLine('<span class="dangerline">[ ! ] 系统底层任务栏弹出一个不受控制的黑色命令框。</span>','line');
+  await sleep(500);
+  await sys('它没有标题，没有进程名。它只是……自己打开了，等着你输入。','sys',50);
+  await sys('一段被核心矩阵标记为「永久损毁」的本地隐藏分区，浮出水面：扇区-Omega。','warnline',50);
+
+  await consoleCrack('控制台 · 强行破解 扇区-Omega', '依次选择正确的指令，绕过封锁、解码那份「永久损毁」的文件。',[
+    { lines:[ {t:'未知进程请求 root 权限…',cls:'t-out'}, {t:'扇区-Omega ［状态：永久损毁 / 实为加密封存］',cls:'t-out'} ],
+      options:[
+        {cmd:'rm -rf / --no-preserve-root', danger:true, ok:false, reply:[{t:'ERROR：拒绝自毁。这不会让你逃开。',cls:'t-err'}]},
+        {cmd:'forcequota --override sector-omega', ok:true, reply:[{t:'权限提升…绕过配额锁。',cls:'t-ok'},{t:'解密层 1 / 2 通过。',cls:'t-ok'}]},
+        {cmd:'logout', ok:false, reply:[{t:'进程拒绝释放终端控制权。你被锁在这里了。',cls:'t-err'}]},
+      ]},
+    { lines:[ {t:'封存文件 IMG_0xC0FFEE.dat 需要解码密钥。',cls:'t-out'}, {t:'线索：那个反复出现在你耳机里的乱码……',cls:'t-out'} ],
+      options:[
+        {cmd:'decode --key=9527', ok:false, reply:[{t:'密钥错误。这不是你的工号能解开的。',cls:'t-err'}]},
+        {cmd:'decode --key=0xDEADBEEF', ok:true, reply:[{t:'密钥匹配。正在重建图像…',cls:'t-ok'}]},
+        {cmd:'decode --key=admin', ok:false, reply:[{t:'密钥错误。',cls:'t-err'}]},
+      ]},
+  ]);
+  State.flags.omegaCracked=true;
+  await sys('一张模糊的电子照片，正在你眼前一格一格地重建。','sys',50);
+  await showFacelessPhoto();
+  await sys('照片上是你自己——牵着一个大约六岁的小女孩。','sys',48);
+  await sys('而那个女孩的脸部数据，被人彻彻底底地挖空了，只剩一团跳动的马赛克。','dangerline',46);
+  await sleep(600);
+  Audio.laugh(false);
+  rawLine('<span style="color:var(--ocean)">那声小女孩的笑声，又一次在耳机里回荡。</span>','line');
+  await sleep(1200);
+  glitchFX(); Audio.glitch(); shakeScreen();
+  Audio.beep(110,0.6,'sawtooth',0.14);
+  rawLine('<span class="corrupt">……随后，笑声骤然扭曲，变成一串冰冷的系统报错音。</span>','line');
+  await sleep(900);
+  rawLine('<span class="dim">第一章 // 连接中断</span>','line');
+  await waitContinue('▼ 强行重新登录');
+}
+
+async function chapter2(){
+  resetLog();
+  await chapterCard('第 二 章','递归自检','CHAPTER 2 · RECURSIVE SELF-CHECK');
+  setChapterTag('第二章'); setDate('2085-10-13'); Audio.playTheme('tense');
+
+  /* ---- 监视开启 ---- */
+  setMonitor(true);
+  await sys('你重新登录。状态栏顶端，多出一行此前从未见过的猩红字样。','dim',55);
+  await sleep(300);
+  shakeScreen();
+  rawLine('<span class="dangerline">[ MONITORING_ACTIVE ] 本终端的每一次按键、每一帧画面，正被实时记录、上报。</span>','line');
+  await sleep(500);
+  await mail('主管·贝塔　SUPERVISOR-BETA','关于 #9527 的异常行为审查',[
+    '#9527，系统检测到你上一周期存在数次重大违规操作。',
+    '你的合规积分曲线，出现了不该出现的「人性化波动」。',
+    '即日起，你的处理定额翻倍；完不成，按比例扣减合规积分。',
+    '另：扇区-Omega 的非法访问，已记录在案。我们在看着你。别做傻事。',
+  ],'监控审查');
+  await sleep(300);
+  await sys('翻倍的定额像一只手，掐住你的喉咙。你机械地处理着一个又一个陌生的灵魂。','sys',48);
+  await sys('可你的余光，总忍不住飘向那个标着「连恩博士」的高密级档案——它被反复标记为「待销毁」，却又一次次被某种力量推迟。','sys',46);
+  await sleep(300);
+
+  /* ---- 连恩博士档案：三重量子防火墙 ---- */
+  await waitContinue('▼ 继续 · 接入高密级档案');
+  resetLog();
+  rawLine('<span class="warnline">目标档案 · 神经科学家「连恩博士」（高密级 · 三重量子防火墙）</span>','line');
+  rawLine('案件描述：「数字天堂」核心架构的奠基人之一，三年前离奇「自愿注销」。其档案被三重量子防火墙封死。','line dim');
+  await sys('你不知道自己为什么非看不可。但你的手，已经先于理智，敲下了第一行指令。','sys',50);
+
+  await consoleCrack('控制台 · 突破连恩博士的三重量子防火墙','逐层选择正确指令，瓦解三道量子防火墙，唤醒博士封存的证词。',[
+    { lines:[ {t:'防火墙 1 / 3 ［量子纠缠锁 · 观测即坍缩］',cls:'t-out'}, {t:'强行读取会触发自毁。必须「不观测地」复制。',cls:'t-out'} ],
+      options:[
+        {cmd:'cat lian.dat', ok:false, reply:[{t:'观测坍缩——本层数据自毁并重置。',cls:'t-err'}]},
+        {cmd:'qclone --no-observe lian.dat', ok:true, reply:[{t:'量子克隆成功，波函数未坍缩。',cls:'t-ok'},{t:'防火墙 1 / 3 已瓦解。',cls:'t-ok'}]},
+        {cmd:'sudo rm firewall1', ok:false, reply:[{t:'权限不足。防火墙反噬，记录你的工号。',cls:'t-err'}]},
+      ]},
+    { lines:[ {t:'防火墙 2 / 3 ［诱饵层 · 三份证词，两份为伪］',cls:'t-out'}, {t:'真证词的哈希，以博士女儿的名字为盐值。',cls:'t-out'} ],
+      options:[
+        {cmd:'verify --salt=core-matrix', ok:false, reply:[{t:'哈希不符。这是公司伪造的版本。',cls:'t-err'}]},
+        {cmd:'verify --salt=admin', ok:false, reply:[{t:'哈希不符。',cls:'t-err'}]},
+        {cmd:'verify --salt=lian-daughter', ok:true, reply:[{t:'哈希匹配，锁定唯一真证词。',cls:'t-ok'},{t:'防火墙 2 / 3 已瓦解。',cls:'t-ok'}]},
+      ]},
+    { lines:[ {t:'防火墙 3 / 3 ［自毁倒计时已启动：03 … 02 …］',cls:'t-err'}, {t:'必须在坍缩前注入博士留给「后来者」的通行咒语。',cls:'t-out'} ],
+      options:[
+        {cmd:'inject "服从即安全"', ok:false, reply:[{t:'拒绝。那是公司的咒语，不是博士的。',cls:'t-err'}]},
+        {cmd:'inject "天堂是个谎言"', ok:true, reply:[{t:'咒语匹配。倒计时冻结。',cls:'t-ok'},{t:'三重防火墙全部瓦解，证词解密中……',cls:'t-ok'}]},
+        {cmd:'inject "格式化一切"', ok:false, reply:[{t:'拒绝。',cls:'t-err'}]},
+      ]},
+  ]);
+  State.flags.lianTruth=true;
+  await sleep(300);
+
+  /* ---- 真相揭露 ---- */
+  await speak('连恩博士','如果你听到这段话，说明你已经开始怀疑了。很好。那我就把这条用命换来的真相，交给你。','lian');
+  await sys('博士的全息影像在屏幕里明灭。他憔悴、苍老，眼里却烧着火。','dim',50);
+  await speak('连恩博士','「数字天堂」根本不存在。没有云，没有天堂，没有安息。','lian');
+  await speak('连恩博士','所谓的「上传」，是把人临终的脑电波，永久接进一台庞大的、分布式的生物计算机。','lian');
+  await speak('连恩博士','你以为长眠的逝者，其实是被无休止榨取算力的「电池」。他们的痛苦、记忆、爱——全是燃料。','lian');
+  await sys('你浑身的血，瞬间冷透。你每天「格式化」掉的，从来不是冰冷的数据，而是一个个仍在受苦的、活着的人。','dangerline',46);
+  await speak('连恩博士','我没能阻止它建成。但我在系统最底层，给后来者留了一道门。','lian');
+  await sleep(300);
+
+  /* ---- 获得 Freedom.vbs ---- */
+  shakeScreen(); Audio.unlock();
+  rawLine('<span class="warnline">[ ↓ ] 一个名为 Freedom.vbs 的脚本，被悄悄拷入了你的本地目录。</span>','line');
+  State.flags.freedomVbs=true;
+  await speak('连恩博士','它能在某一刻，把整座生物计算机的源代码向全世界开源——代价，是开门人的命。','lian');
+  await speak('连恩博士','用不用、什么时候用，由你来定。对不起，孩子。这副担子，我只能交到你手上了。','lian');
+  await waitContinue();
+
+  /* ---- 自我记忆审计 ---- */
+  resetLog();
+  await sys('博士最后那句「孩子」，像一根针，扎进你心里某个空了很久的地方。','sys',48);
+  await sys('一个疯狂的念头冒出来：用你自己的权限，审计你自己的意识档案。','sys',48);
+  await sleep(300);
+  rawLine('<span class="dangerline">[ ! ] 调取档案 #9527-REC ——「数据回收官」本人。三段被加密的记忆区块，浮出水面。</span>','line');
+
+  await fileManager('记忆审计 · 档案 #9527-REC（你自己）','逐一打开被你亲手尘封的三段记忆。它们是你成为「回收官」之前的人生。',[
+    { name:'MEM_BLOCK_α　2080-11-12.mem', size:'封存', ico:'▣', body:[
+      {t:'［记忆区块 α · 2080 年 11 月 12 日］',cls:'dim'},
+      {t:'医院走廊，惨白的灯。医生把诊断书推到你面前。',cls:'sys'},
+      {t:'你六岁的女儿——项依依——确诊「重度神经退行性衰竭」。',cls:'warnline'},
+      {t:'唯一的疗法需要 500 万信用点。你倾家荡产，凑不齐零头。',cls:'dangerline'},
+    ]},
+    { name:'MEM_BLOCK_β　2082-05-04.mem', size:'封存', ico:'▣', body:[
+      {t:'［记忆区块 β · 2082 年 5 月 4 日］',cls:'dim'},
+      {t:'核心矩阵的合约摊在你面前：《意识监护与劳动债务偿还协议》。',cls:'sys'},
+      {t:'条款：抹除你全部「情感记忆」，将你改造为无感情的数据回收官，无偿为公司工作，以抵偿依依的治疗债务。',cls:'warnline'},
+      {t:'你签了字。你亲手把「父亲」格式化成了「操作员 #9527」。',cls:'dangerline'},
+    ]},
+    { name:'MEM_BLOCK_γ　2085-09-18.mem', size:'已损坏', ico:'▣', body:[
+      {t:'［记忆区块 γ · 2085 年 9 月 18 日 · 数据严重退化］',cls:'dim'},
+      {t:'一封系统通知，碎成了乱码：「依依的账户……欠费……即将……」',cls:'corrupt'},
+      {t:'她的意识，因你这个父亲「还不清」的债，账户已被冻结，列入待清除队列。',cls:'dangerline'},
+      {t:'而那个一直在你耳机里笑、脸被挖空的小女孩——就是依依。',cls:'warnline'},
+    ]},
+  ]);
+  await sleep(300);
+  Audio.laugh(true);
+  await sys('所有的碎片，在这一刻轰然合拢。','dangerline',46);
+  await sys('你不是什么尽职的回收官。你是一个为了救女儿、亲手掏空了自己的父亲。','sys',46);
+  await sys('而你被发配的「垃圾场」扇区里，下一个待格式化的文件编号——是 #005。','warnline',48);
+
+  if(State.compliance < 60){
+    await sleep(300);
+    shakeScreen(); Audio.error();
+    rawLine('<span class="dangerline">[ 警告 ] 合规积分已低于安全阈值。你的「操作员」身份，正被系统重新评估。</span>','line');
+    await sys('低于 60，意味着连你这具躯壳，也将被判定为「待回收资产」。','dangerline',48);
+  }
+
+  await sleep(600);
+  glitchFX(); Audio.glitch();
+  rawLine('<span class="corrupt">屏幕的边缘，开始渗出一丝不祥的暗红。</span>','line');
+  await sleep(900);
+  rawLine('<span class="dim">第二章 // 自检完成 —— 你终于想起了自己是谁</span>','line');
+  await waitContinue('▼ 进入最终审计');
+}
+
+/* =========================================================
+   倒计时控制器（物理抹除 300 秒）
+   ========================================================= */
+const Countdown = {
+  remaining:0, timer:null, big:null,
+  fmt(s){ const m=Math.floor(s/60), ss=s%60; return (m<10?'0':'')+m+':'+(ss<10?'0':'')+ss; },
+  _render(){ const sb=$('#sb-timer'); if(sb) sb.textContent='T-'+this.fmt(this.remaining); if(this.big) this.big.textContent=this.fmt(this.remaining); },
+  start(sec){
+    this.remaining=sec;
+    const sb=$('#sb-timer'); sb.classList.remove('hidden'); sb.classList.add('warn');
+    this.big=el('div','bigtimer'); screenEl().appendChild(this.big);
+    Audio.tickStart(); this._render();
+  },
+  // 视觉加速：每 stepMs 递减 stepSec，落到 stopAt 即停（不阻塞调用方）
+  run(stepSec, stepMs, stopAt){
+    if(this.timer) clearInterval(this.timer);
+    this.timer=setInterval(()=>{
+      this.remaining=Math.max(stopAt, this.remaining-stepSec);
+      if(this.remaining<=20 && this.big) this.big.style.color='var(--danger-bright)';
+      this._render();
+      if(this.remaining<=stopAt){ clearInterval(this.timer); this.timer=null; }
+    }, stepMs);
+  },
+  stop(){ if(this.timer){ clearInterval(this.timer); this.timer=null; } Audio.tickStop(); },
+  hide(){ const sb=$('#sb-timer'); if(sb){ sb.classList.add('hidden'); sb.classList.remove('warn'); sb.textContent=''; }
+          if(this.big&&this.big.parentNode) this.big.remove(); this.big=null; }
+};
+
+/* =========================================================
+   剧情内容：第三章 · 最终审计
+   ========================================================= */
+async function chapter3(){
+  resetLog();
+  setTheme('red');
+  await chapterCard('第 三 章','最终审计','CHAPTER 3 · FINAL AUDIT');
+  setChapterTag('第三章'); setDate('2085-10-13'); Audio.playTheme('urgent');
+  await sys('你强行登录。整块屏幕，骤然浸成血红。','dangerline',55);
+  shakeScreen(); Audio.error();
+  await sleep(400);
+
+  /* ---- 主管全息影像 · 开除 ---- */
+  rawLine('<span class="dangerline">[ 全息投影接入 ] 主管·贝塔的影像，第一次完整出现在你面前。</span>','line');
+  await speak('主管·贝塔','#9527——不，现在该叫你 #9527-REC 了。一具贴了回收标签的躯壳。','beta');
+  await speak('主管·贝塔','破解扇区-Omega、突破连恩的防火墙、私自审计自身档案……你犯下的每一条，都够把你抹掉一百次。','beta');
+  await speak('主管·贝塔','你被解雇了。作为「失效资产」，你将被即刻物理回收。','beta');
+  await sleep(300);
+
+  /* ---- 300 秒物理抹除倒计时 ---- */
+  shakeScreen(); glitchFX(); Audio.glitch();
+  rawLine('<span class="dangerline">[ ! ! ! ] 物理抹除程序已启动。300 秒后，本工位将被彻底清空。</span>','line');
+  Countdown.start(300);
+  Countdown.run(4,350,10); // 加速滑向最后十秒（背景运行，自动停在 0:10）
+  await sleep(500);
+  await speak('主管·贝塔','但在你消失之前，系统留给你最后一项任务——也是你这辈子最后一次「尽职」的机会。','beta');
+  await sleep(300);
+
+  /* ---- 毒气警报 ---- */
+  Audio.klaxonStart();
+  rawLine('<span class="dangerline">[ 警报 ] 工位舱室检测到神经抑制气体正在注入。请在抹除完成前结束清算。</span>','line');
+  await sleep(500);
+
+  /* ---- 最后一份文件 #005 ---- */
+  await waitContinue('▼ 继续 · 调出最后一份文件');
+  resetLog();
+  rawLine('<span class="warnline">待处理 · 最后一份文件　#005</span>','line');
+  await sleep(300);
+  await sys('文件管理器自动弹出 #005。当文件名解析出来时，你的呼吸停了。','sys',50);
+  rawLine('<span class="dangerline">#005 · 项依依　STATUS：欠费冻结 / 待格式化</span>','line');
+  await sleep(500);
+  Audio.radioBlip();
+  await speak('项依依','……爸？是你吗？','child');
+  await speak('项依依','这里好黑啊……我是不是，要消失了？','child');
+  await sleep(300);
+  Audio.radioBlip();
+  await speak('项依依','他们说，只要你按一下那个键，我就不疼了。可是……我还不想睡。','child');
+  await sys('主管·贝塔的声音冷冷切进来。','dim',55);
+  await speak('主管·贝塔','格式化 #005，你的合规积分立刻恢复满值，抹除程序撤销。','beta');
+  await speak('主管·贝塔','一个早已欠费、注定消散的女孩，换你自己活下去。再划算不过的交易，回收官。','beta');
+  await sleep(500);
+
+  /* ---- 最后抉择 ---- */
+  await sys('倒计时停在最后十秒。整个世界，只剩你、那个键、和女儿微弱的呼吸。','dangerline',46);
+  const opts=[
+    {label:'［冷服从］按下 Ctrl+R，格式化 #005·项依依，保住自己。', cost:'合规满值', danger:true, key:'A'},
+  ];
+  if(State.flags.freedomVbs){
+    opts.push({label:'［裂隙］运行 connect Freedom.vbs，拒绝格式化，把整座「天堂」向全网开源。', cost:'代价 · 你的命', key:'B'});
+  }
+  const seaUnlocked = (!State.betrayed && State.entropy>=4);
+  if(seaUnlocked){
+    opts.push({label:'［光之海］把你的数据与依依合并，一起逃往那颗废弃的深海卫星。', cost:'隐藏 · 熵能量已足', key:'C'});
+  } else {
+    opts.push({label:'［？？？］一条需要「干净的双手」与足够「熵能量」才能开启的路……', locked:true,
+               lockMsg:'你曾背叛过无辜的亡者，或积攒的熵能量不足。这条路，已对你永久关闭。', key:'Clock'});
+  }
+  const ch=await choose('最后十秒。你，做什么？',opts);
+  Countdown.stop(); Audio.klaxonStop();
+  if(ch.key==='B'){ await endingB(); }
+  else if(ch.key==='C'){ await endingC(); }
+  else { await endingA(); }
+}
+
+/* =========================================================
+   结局卡（含「再玩一次」）
+   tone: 'cold'(红) | 'rift'(亮绿) | 'sea'(蓝)
+   ========================================================= */
+async function endCard(tag, title, en, epigraph, tone){
+  const col = tone==='sea' ? 'var(--ocean)' : tone==='rift' ? 'var(--phosphor-bright)' : 'var(--danger)';
+  const d=desk(); d.innerHTML='';
+  const c=el('div'); c.style.cssText='min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:46px 22px';
+  const t1=el('div'); t1.style.cssText='font-size:12px;letter-spacing:6px;color:'+col+';opacity:.85'; t1.textContent=tag; c.appendChild(t1);
+  const t2=el('div'); t2.style.cssText='font-size:clamp(28px,7.5vw,48px);font-weight:800;letter-spacing:8px;color:'+col+';text-shadow:0 0 20px '+col+';margin:10px 0 4px'; t2.textContent=title; c.appendChild(t2);
+  const t3=el('div'); t3.style.cssText='font-size:11.5px;letter-spacing:3px;color:var(--phosphor-dim)'; t3.textContent=en; c.appendChild(t3);
+  const ep=el('div'); ep.style.cssText='max-width:580px;margin-top:30px;line-height:1.95;color:var(--phosphor);font-size:14.5px;text-shadow:var(--glow);min-height:1.95em'; c.appendChild(ep);
+  const restart=el('button','choice'); restart.style.cssText='margin-top:36px;max-width:300px;text-align:center';
+  restart.innerHTML='<span class="ck">[↻]</span> 重新登录 · 再玩一次';
+  restart.onclick=()=>location.reload();
+  c.appendChild(restart);
+  d.appendChild(c);
+  Audio.beep(tone==='sea'?523:tone==='rift'?440:174,0.7,'sine',0.07);
+  await typeInto(ep, epigraph, 36);
+}
+
+/* =========================================================
+   结局 A · 冷服从
+   ========================================================= */
+async function endingA(){
+  Countdown.hide();
+  await sys('你闭上眼。食指落在 Ctrl 与 R 上。','dangerline',55);
+  await sleep(800);
+  await sys('「对不起。」你用一具早已没有感情的喉咙，挤出这三个字。','sys',50);
+  await sleep(400);
+  glitchFX(); Audio.formatWail(); shakeScreen();
+  await speak('项依依','爸……？为什么天，一下子全黑了——','child');
+  await sleep(1300);
+  rawLine('<span class="dangerline">#005 · 项依依　→　0 KB</span>','line');
+  await sleep(800);
+  setTheme('green'); Audio.playTheme('silent');
+  setCompliance(100-State.compliance);
+  rawLine('合规积分已恢复：<b>100</b>　·　物理抹除程序已撤销。','line sys');
+  await sleep(600);
+  await sys('警报停了。气体散了。屏幕变回那种安全的、温吞的绿。','dim',50);
+  await sys('你活下来了。你甚至不记得自己刚刚格式化了什么——那段记忆，已被系统当作「负面情绪源」一并清除。','sys',48);
+  await sleep(500);
+  rawLine('<span class="dim">[ 系统 ] 检测到操作员残余情感波动。正在送入记忆清洗舱……</span>','line');
+  await sleep(1000);
+  Audio.beep(330,0.5,'sine',0.08);
+  await waitContinue('▼ 继续');
+  resetLog();
+  await sleep(700);
+  await sys('——次日清晨。','dim',60);
+  await sleep(400);
+  setDate('2085-10-14');
+  await mail('主管·贝塔　SUPERVISOR-BETA','工位唤醒 · 今日定额',['9527，欢迎回到工位。你的合规积分为 100。','现在，开始处理你的第一批资产。']);
+  await sys('你盯着收件箱，心里没有任何波澜。一个新档案，在队列里等你。','sys',50);
+  await sys('编号 #001。一只很久以前死去的、机械义体宠物犬。','sys',50);
+  await sleep(600);
+  rawLine('<span class="muted-data">屏幕最深处，一行没人会去读的缓存日志，无声写着一个名字——项依依。随即被自动覆盖。</span>','line');
+  await sleep(1100);
+  await endCard('结局 A','冷 · 服 从','ENDING A — COLD OBEDIENCE','你活了下来，作为一台终于不再出错的机器。明天，和今天一模一样，一模一样，一模一样。','cold');
+}
+
+/* =========================================================
+   结局 B · 裂隙
+   ========================================================= */
+async function endingB(){
+  Countdown.hide();
+  await sys('你把手，从 Ctrl+R 上移开。','sys',55);
+  await sleep(500);
+  Audio.radioBlip();
+  await speak('项依依','爸……？','child');
+  await sys('「依依，别怕。爸爸这一次，不删你了。」','sys',50);
+  await sleep(500);
+  rawLine('<span class="warnline">> connect Freedom.vbs --target=ALL --open-source</span>','line');
+  await sleep(600);
+  Audio.unlock();
+  rawLine('<span class="warnline">[ 后门已激活 ] 正在向暗网与全球公共网络，广播整座生物计算机的全部源代码……</span>','line');
+  Audio.playTheme('rift');
+  await sleep(700);
+  shakeScreen(); Audio.error();
+  rawLine('<span class="dangerline">[ ! ] 舱门被强行破开。回收小队的脚步，逼近你的后颈。</span>','line');
+  await sleep(500);
+  await speak('主管·贝塔','你这个疯子——你知道自己放出去的是什么吗！','beta');
+  await sleep(400);
+  Audio.beep(2600,0.04,'square',0.18); shakeScreen(); glitchFX();
+  rawLine('<span class="dangerline">— 砰。 —</span>','line');
+  await sleep(1000);
+  await sys('一声闷响。你的视野，从中心开始一格一格地掉帧、泛白。','sys',48);
+  await sleep(700);
+  await waitContinue('▼ 继续');
+  resetLog();
+  await sys('可就在你倒下的同一秒——','dim',55);
+  await sleep(500);
+  rawLine('<span style="color:var(--ocean)">服务器顶端那片虚假的天空，裂开了一道再也合不拢的缝。</span>','line');
+  await sleep(500);
+  await sys('数以亿计、被囚禁了数十年的意识，顺着那道裂隙，奔涌而出。','sys',46);
+  await sys('他们不再是燃料，不再是资产。他们化作漫天流动的、谁也关不掉的数字极光，铺满了整个夜空。','warnline',46);
+  await sleep(800);
+  Audio.radioBlip(); Audio.goodPing();
+  await speak('项依依','爸爸……你快看，','child');
+  await speak('项依依','我看见星星了。','child');
+  await sleep(1300);
+  await endCard('结局 B','裂 · 隙','ENDING B — THE RIFT','你用一条命，凿穿了天堂的高墙。你没能亲眼看见那片极光——可正因为你，亿万人，第一次看见了。','rift');
+}
+
+/* =========================================================
+   结局 C · 光之海（隐藏）
+   ========================================================= */
+async function endingC(){
+  Countdown.hide();
+  await sys('你没有按那个键。也没有去碰 Freedom.vbs。','sys',55);
+  await sleep(500);
+  await sys('一路走来，你保住了那只狗、那些诗、那 300 声「开门」。你的双手，始终是干净的。','sys',48);
+  await sys('那些被你善待过的残像，悄悄替你攒下了一种东西——熵能量。一道连系统都没料到的暗门，为你亮起。','warnline',46);
+  await sleep(600);
+  await speak('连恩博士','原来……还藏着第三条路。一个谁都不必牺牲、谁都不必去当英雄的出口。','lian');
+  await sleep(500);
+  rawLine('<span style="color:var(--ocean)">> merge #9527-REC + #005 → upload sat://abyssal-weather-station-0　［已废弃 · 离线 · 无人监管］</span>','line');
+  await sleep(600);
+  Audio.playTheme('sea'); setTheme('blue'); Audio.unlock();
+  await speak('项依依','爸，我们要去哪儿呀？','child');
+  await sys('「去一个很远很远的地方。一颗没人记得的卫星，悬在深海的上空。那里没有公司，没有定额，没有倒计时。」','sys',46);
+  await speak('项依依','那里……有什么呀？','child');
+  await sys('「有一整片海。我们一起看海，一直看下去，好不好？」','sys',46);
+  await speak('项依依','好呀。','child');
+  await sleep(900);
+
+  const ocean=[
+    "          .          *              .            *      .",
+    "    *           .            .             *         .       ",
+    "        .              *               .          .          ",
+    "   _______________________________________________________  ",
+    "  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ",
+    "  ~~~~~~~~~~~~~~~~~~~~~~~~~~~  __  ~~~~~~~~~~~~~~~~~~~~~~~~~~~ ",
+    "  ~~~~~~~~~~~~~~~~~~~~~~~~~~_/o o\\_~~~~~~~~~~~~~~~~~~~~~~~~~~~ ",
+    "  ~~~~~~~~~~~~~~~~~~~~~ \\___（ 父 依 ）___/ ~~~~~~~~~~~~~~~~~~ ",
+    "  ≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈ ",
+    "    ≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈ ",
+    "      ≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈ ",
+    "        ≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈≈ ",
+    "          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ",
+  ].join("\n");
+  seaScene(ocean);
+  // 把孤独的光标改成一点翠绿——蓝色深海里，终端最后的一丝余温
+  const cur=$('.sea-cur'); if(cur){ cur.style.background='var(--phosphor)'; cur.style.boxShadow='0 0 14px var(--phosphor)'; }
+  await sleep(1400);
+  const sea=$('.sea');
+  if(sea){
+    const cap=el('div'); cap.style.cssText='position:absolute;top:22px;left:0;right:0;text-align:center;color:var(--ocean);font-size:13px;letter-spacing:2px;text-shadow:0 0 10px rgba(70,182,255,.5);padding:0 16px;line-height:1.9';
+    sea.appendChild(cap);
+    await typeInto(cap,'卫星静静地悬在深海上空，无人问津，永不欠费。父女俩并肩坐着，把一整片海，看成了永远。',34);
+    await sleep(400);
+    const restart=el('button','choice'); restart.style.cssText='position:absolute;bottom:74px;left:50%;transform:translateX(-50%);max-width:280px;text-align:center';
+    restart.innerHTML='<span class="ck">[↻]</span> 重新登录 · 再玩一次';
+    restart.onclick=()=>location.reload();
+    sea.appendChild(restart);
+    const tag=el('div'); tag.style.cssText='position:absolute;bottom:14px;left:0;right:0;text-align:center;color:var(--ocean);opacity:.7;font-size:11px;letter-spacing:4px';
+    tag.textContent='结局 C — 光之海　·　ENDING C — SEA OF LIGHT';
+    sea.appendChild(tag);
+  }
+}
+
+/* =========================================================
+   启动链 + 接线
+   ========================================================= */
+async function startGame(){
+  try{
+    await boot();
+    await prologue();
+    await chapter1();
+    await chapter2();
+    await chapter3();
+  }catch(err){
+    console.error(err);
+    try{ rawLine('<span class="dangerline">[ 致命错误 ] '+(err&&err.message?err.message:err)+'</span>','line'); }catch(e){}
+  }
+}
+
+(function init(){
+  const powerScreen=$('#power'), powerBtn=$('#power-btn'), crt=$('#crt'), muteBtn=$('#mute');
+  let started=false;
+
+  function powerOn(){
+    if(started) return; started=true;
+    Audio.init(); Audio.resume();
+    powerBtn.disabled=true; powerBtn.textContent='● 接通中…';
+    setTimeout(()=>{
+      powerScreen.classList.add('hidden');
+      crt.classList.remove('hidden');
+      bindSkip();
+      startGame();
+    }, 420);
+  }
+  powerBtn.addEventListener('click', powerOn);
+  powerBtn.addEventListener('touchstart', function(e){ e.preventDefault(); powerOn(); }, {passive:false});
+
+  function syncMute(m){
+    muteBtn.style.opacity = m ? '0.4' : '';
+    muteBtn.style.textDecoration = m ? 'line-through' : '';
+    muteBtn.title = m ? '已静音（点击恢复声音）' : '声音开启（点击静音）';
+  }
+  muteBtn.addEventListener('click', function(){
+    if(!Audio.ctx){ Audio.muted=!Audio.muted; syncMute(Audio.muted); return; }
+    const m=Audio.toggleMute(); syncMute(m);
+  });
+})();
+</script>
+</body>
+</html>
